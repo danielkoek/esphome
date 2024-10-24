@@ -4,7 +4,7 @@
 
 #include "i2c_bus.h"
 #include "esphome/core/component.h"
-#include <driver/i2c.h>
+#include <driver/i2c_master.h>
 
 namespace esphome {
 namespace i2c {
