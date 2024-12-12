@@ -11,7 +11,7 @@ MULTI_CONF = True
 DEPENDENCIES = ["uart"]
 AUTO_LOAD = ["sensor", "text_sensor"]
 CONF_DIO1_PIN = "dio1_pin"
-
+CONF_DIO2_PIN = "dio2_pin"
 # Hack to prevent compile error due to ambiguity with lib namespace
 ebyte_lora_ns = cg.esphome_ns.namespace("sx1262")
 SX1262Component = ebyte_lora_ns.class_(
@@ -24,10 +24,11 @@ CONFIG_SCHEMA = cv.All(
     cv.Schema(
         {
             cv.GenerateID(): cv.declare_id(CONF_ID),
+            cv.Required(CONF_CS_PIN): pins.gpio_output_pin_schema,
             cv.Required(CONF_RESET_PIN): pins.gpio_output_pin_schema,
             cv.Required(CONF_BUSY_PIN): pins.gpio_output_pin_schema,
             cv.Required(CONF_DIO1_PIN): pins.gpio_output_pin_schema,
-            cv.Required(CONF_CS_PIN): pins.gpio_output_pin_schema,
+            cv.Required(CONF_DIO2_PIN): pins.gpio_output_pin_schema,
         }
     ).extend(spi.spi_device_schema()),
 )
@@ -41,9 +42,10 @@ async def to_code(config):
     cg.add(var.set_reset_pin(reset))
     busy = await cg.gpio_pin_expression(config[CONF_BUSY_PIN])
     cg.add(var.set_busy_pin(busy))
-    dio1 = await cg.gpio_pin_expression(config[CONF_DIO1_PIN])
-    cg.add(var.set_dio1_pin(dio1))
+
     cs = await cg.gpio_pin_expression(config[CONF_CS_PIN])
     cg.add(var.set_cs_pin(cs))
+    dio2 = await cg.gpio_pin_expression(config[CONF_DIO2_PIN])
+    cg.add(var.set_dio2_pin(dio2))
     # RadioLib
     cg.add_library("jgromes/RadioLib", "7.1.0")
