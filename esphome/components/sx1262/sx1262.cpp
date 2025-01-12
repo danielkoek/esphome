@@ -50,33 +50,46 @@ void SX1262Component::dump_config() {
   ESP_LOGCONFIG(TAG, "  Lora CS pin: %u", this->internal_cs_pin_->get_pin());
 }
 void SX1262Component::update() {
-  int numBytes = radio.getPacketLength();
-  byte byteArr[numBytes];
-  int state = radio.readData(byteArr, numBytes);
+  // for now means receive
+  if (repeater_enabled_) {
+    radio.startReceive();
+    int numBytes = radio.getPacketLength();
+    byte byteArr[numBytes];
+    int state = radio.readData(byteArr, numBytes);
 
-  if (state == RADIOLIB_ERR_NONE) {
-    // packet was successfully received
-    ESP_LOGD(TAG, "[SX1262] Received packet!");
+    if (state == RADIOLIB_ERR_NONE) {
+      // packet was successfully received
+      ESP_LOGD(TAG, "[SX1262] Received packet!");
 
-    // print data of the packet
-    ESP_LOGD(TAG, "[SX1262] Data:\t\t");
-    for (size_t i = 0; i < numBytes - 1; i++) {
-      ESP_LOGD(TAG, "%u", byteArr[i]);
+      // print data of the packet
+      ESP_LOGD(TAG, "[SX1262] Data:\t\t");
+      for (size_t i = 0; i < numBytes - 1; i++) {
+        ESP_LOGD(TAG, "%u", byteArr[i]);
+      }
+
+      // print RSSI (Received Signal Strength Indicator)
+      ESP_LOGD(TAG, "[SX1262] RSSI:\t\t %f dBm", this->radio.getRSSI());
+
+      // print SNR (Signal-to-Noise Ratio)
+      ESP_LOGD(TAG, "[SX1262] SNR:\t\t %f dB", this->radio.getSNR());
+
+      // print frequency error
+      ESP_LOGD(TAG, "[SX1262] Frequency error:\t %f Hz", this->radio.getFrequencyError());
+    } else if (state == RADIOLIB_ERR_CRC_MISMATCH) {
+      // packet was received, but is malformed
+      ESP_LOGD(TAG, "CRC error!");
+    } else {
+      ESP_LOGD(TAG, "Failed receive %s", GetCodeDescription(state));
     }
-
-    // print RSSI (Received Signal Strength Indicator)
-    ESP_LOGD(TAG, "[SX1262] RSSI:\t\t %f dBm", this->radio.getRSSI());
-
-    // print SNR (Signal-to-Noise Ratio)
-    ESP_LOGD(TAG, "[SX1262] SNR:\t\t %f dB", this->radio.getSNR());
-
-    // print frequency error
-    ESP_LOGD(TAG, "[SX1262] Frequency error:\t %f Hz", this->radio.getFrequencyError());
-  } else if (state == RADIOLIB_ERR_CRC_MISMATCH) {
-    // packet was received, but is malformed
-    ESP_LOGD(TAG, "CRC error!");
   } else {
-    ESP_LOGD(TAG, "Failed %s", GetCodeDescription(state));
+    int transmissionState = radio.startTransmit("Hello World!");
+    if (transmissionState == RADIOLIB_ERR_NONE) {
+      // packet was successfully sent
+      ESP_LOGD(TAG, "Transmission finished!");
+
+    } else {
+      ESP_LOGD(TAG, "Failed tranmission %s", GetCodeDescription(transmissionState));
+    }
   }
 }  // namespace sx1262
 }  // namespace esphome

@@ -17,6 +17,7 @@ class SX1262Component : public PollingComponent,
   void set_busy_pin(InternalGPIOPin *busy) { this->busy_pin_ = busy; }
   void set_dio1_pin(InternalGPIOPin *dio1) { this->dio1_pin_ = dio1; }
   void set_dio2_pin(InternalGPIOPin *dio2) { this->dio2_pin_ = dio2; }
+  void set_repeater(bool enable) { repeater_enabled_ = enable; }
   virtual void initialize() = 0;
 
   void update() override;
@@ -29,6 +30,7 @@ class SX1262Component : public PollingComponent,
  protected:
   void setup_pins_();
   SX1262 radio;
+  bool repeater_enabled_ = false;
   InternalGPIOPin *internal_cs_pin_;
   InternalGPIOPin *dio1_pin_;
   InternalGPIOPin *dio2_pin_;
