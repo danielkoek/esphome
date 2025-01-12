@@ -25,7 +25,7 @@ CONFIG_SCHEMA = cv.All(
     cv.Schema(
         {
             cv.GenerateID(): cv.declare_id(CONF_ID),
-            cv.Required(CONF_REPEATER, default=False): cv.boolean,
+            cv.Required(CONF_REPEATER): cv.boolean,
             cv.Required(CONF_CS_PIN): pins.gpio_output_pin_schema,
             cv.Required(CONF_RESET_PIN): pins.gpio_output_pin_schema,
             cv.Required(CONF_BUSY_PIN): pins.gpio_output_pin_schema,
