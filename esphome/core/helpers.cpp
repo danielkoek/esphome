@@ -126,19 +126,21 @@ uint16_t crc16(const uint8_t *data, uint16_t len, uint16_t crc, uint16_t reverse
     }
   } else
 #endif
-      if (reverse_poly == 0xa001) {
-    while (len--) {
-      uint8_t combo = crc ^ (uint8_t) *data++;
-      crc = (crc >> 8) ^ CRC16_A001_LE_LUT_L[combo & 0x0F] ^ CRC16_A001_LE_LUT_H[combo >> 4];
-    }
-  } else {
-    while (len--) {
-      crc ^= *data++;
-      for (uint8_t i = 0; i < 8; i++) {
-        if (crc & 0x0001) {
-          crc = (crc >> 1) ^ reverse_poly;
-        } else {
-          crc >>= 1;
+  {
+    if (reverse_poly == 0xa001) {
+      while (len--) {
+        uint8_t combo = crc ^ (uint8_t) *data++;
+        crc = (crc >> 8) ^ CRC16_A001_LE_LUT_L[combo & 0x0F] ^ CRC16_A001_LE_LUT_H[combo >> 4];
+      }
+    } else {
+      while (len--) {
+        crc ^= *data++;
+        for (uint8_t i = 0; i < 8; i++) {
+          if (crc & 0x0001) {
+            crc = (crc >> 1) ^ reverse_poly;
+          } else {
+            crc >>= 1;
+          }
         }
       }
     }
@@ -767,7 +769,8 @@ bool mac_address_is_valid(const uint8_t *mac) {
   return !(is_all_zeros || is_all_ones);
 }
 
-void delay_microseconds_safe(uint32_t us) {  // avoids CPU locks that could trigger WDT or affect WiFi/BT stability
+void IRAM_ATTR HOT delay_microseconds_safe(uint32_t us) {
+  // avoids CPU locks that could trigger WDT or affect WiFi/BT stability
   uint32_t start = micros();
 
   const uint32_t lag = 5000;  // microseconds, specifies the maximum time for a CPU busy-loop.
