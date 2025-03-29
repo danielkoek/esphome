@@ -51,4 +51,4 @@ async def to_code(config):
     cg.add(var.set_dio2_pin(dio2))
     cg.add(var.set_repeater(config[CONF_REPEATER]))
     # RadioLib
-    cg.add_library("jgromes/RadioLib", "7.1.0")
+    cg.add_library("jgromes/RadioLib", "7.1.2")
