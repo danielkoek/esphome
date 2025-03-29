@@ -6,6 +6,38 @@ namespace sx1262 {
 #define SX126X_RXEN 38
 #define SX126X_TXEN RADIOLIB_NC
 #define SX126X_DIO3_TCXO_VOLTAGE 1.8
+// flag to indicate that a packet was received
+volatile bool receivedFlag = false;
+
+// this function is called when a complete packet
+// is received by the module
+// IMPORTANT: this function MUST be 'void' type
+//            and MUST NOT have any arguments!
+#if defined(ESP8266) || defined(ESP32)
+ICACHE_RAM_ATTR
+#endif
+void setReceiveFlag(void) {
+  // we got a packet, set the flag
+  receivedFlag = true;
+}
+
+// save transmission state between loops
+int transmissionState = RADIOLIB_ERR_NONE;
+// flag to indicate that a packet was sent
+// or a frequency hop is needed
+volatile bool transmittedFlag = false;
+
+// this function is called when a complete packet
+// is transmitted by the module
+// IMPORTANT: this function MUST be 'void' type
+//            and MUST NOT have any arguments!
+#if defined(ESP8266) || defined(ESP32)
+ICACHE_RAM_ATTR
+#endif
+void setTransmitFlag(void) {
+  // we sent a packet or need to hop, set the flag
+  transmittedFlag = true;
+}
 void SX1262Component::setup_pins_() {
   this->dio1_pin_->setup();   // OUTPUT
   this->reset_pin_->setup();  // OUTPUT
@@ -38,7 +70,17 @@ void SX1262Component::initialize() {
 
     // SX1262 rf switch order: setRfSwitchPins(rxEn, txEn);
     radio.setRfSwitchPins(this->dio2_pin_->get_pin(), RADIOLIB_NC);
-    ESP_LOGD(TAG, "Success");
+    radio.setPacketReceivedAction(setReceiveFlag);
+    state = radio.startReceive();
+    if (state == RADIOLIB_ERR_NONE) {
+      Serial.println(F("success!"));
+    } else {
+      Serial.print(F("failed, code "));
+      Serial.println(state);
+      while (true) {
+        delay(10);
+      }
+    }
   }
 
   if (state != RADIOLIB_ERR_NONE) {
@@ -49,10 +91,10 @@ void SX1262Component::dump_config() {
   ESP_LOGCONFIG(TAG, "SX1262Component:");
   ESP_LOGCONFIG(TAG, "  Lora CS pin: %u", this->internal_cs_pin_->get_pin());
 }
-void SX1262Component::update() {
+void SX1262Component::loop() {
   // for now means receive
-  if (repeater_enabled_) {
-    radio.startReceive();
+  if (receivedFlag) {
+    receivedFlag = false;
     int numBytes = radio.getPacketLength();
     byte byteArr[numBytes];
     int state = radio.readData(byteArr, numBytes);
@@ -81,15 +123,37 @@ void SX1262Component::update() {
     } else {
       ESP_LOGD(TAG, "Failed receive %s", GetCodeDescription(state));
     }
-  } else {
-    int transmissionState = radio.startTransmit("Hello World!");
-    if (transmissionState == RADIOLIB_ERR_NONE) {
-      // packet was successfully sent
-      ESP_LOGD(TAG, "Transmission finished!");
-
-    } else {
-      ESP_LOGD(TAG, "Failed tranmission %s", GetCodeDescription(transmissionState));
-    }
   }
-}  // namespace sx1262
+  if (!repeater_enabled_) {
+    if (transmittedFlag) {
+      // reset flag
+      transmittedFlag = false;
+
+      if (transmissionState == RADIOLIB_ERR_NONE) {
+        // packet was successfully sent
+        Serial.println(F("transmission finished!"));
+
+        // NOTE: when using interrupt-driven transmit method,
+        //       it is not possible to automatically measure
+        //       transmission data rate using getDataRate()
+
+      } else {
+        Serial.print(F("failed, code "));
+        Serial.println(transmissionState);
+      }
+
+      // clean up after transmission is finished
+      // this will ensure transmitter is disabled,
+      // RF switch is powered down etc.
+      radio.finishTransmit();
+
+      // wait a second before transmitting again
+      delay(1000);
+
+      // print SNR (Signal-to-Noise Ratio)
+      ESP_LOGD(TAG, "[SX1262] Sending another packet ... ");
+
+      transmissionState = radio.startTransmit("Hello World! #");
+    }
+  }  // namespace sx1262
 }  // namespace esphome

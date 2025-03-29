@@ -8,7 +8,7 @@
 namespace esphome {
 namespace sx1262 {
 static const char *const TAG = "SX1262";
-class SX1262Component : public PollingComponent,
+class SX1262Component : public Component,
                         public spi::SPIDevice<spi::BIT_ORDER_MSB_FIRST, spi::CLOCK_POLARITY_LOW,
                                               spi::CLOCK_PHASE_LEADING, spi::DATA_RATE_2MHZ> {
  public:
@@ -20,7 +20,7 @@ class SX1262Component : public PollingComponent,
   void set_repeater(bool enable) { repeater_enabled_ = enable; }
   virtual void initialize() = 0;
 
-  void update() override;
+  void loop() override;
   void dump_config() override;
   void setup() override {
     this->setup_pins_();
