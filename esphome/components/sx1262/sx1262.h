@@ -10,7 +10,7 @@ namespace sx1262 {
 static const char *const TAG = "SX1262";
 class SX1262Component : public Component,
                         public spi::SPIDevice<spi::BIT_ORDER_MSB_FIRST, spi::CLOCK_POLARITY_LOW,
-                                              spi::CLOCK_PHASE_LEADING, spi::DATA_RATE_2MHZ> {
+                                              spi::CLOCK_PHASE_LEADING, spi::DATA_RATE_8MHZ> {
  public:
   void set_cs_pin(InternalGPIOPin *cs) { this->internal_cs_pin_ = cs; }
   void set_reset_pin(InternalGPIOPin *reset) { this->reset_pin_ = reset; }

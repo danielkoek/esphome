@@ -8,7 +8,7 @@ CODEOWNERS = ["@danielkoek"]
 
 MULTI_CONF = True
 
-DEPENDENCIES = ["uart"]
+DEPENDENCIES = ["spi"]
 AUTO_LOAD = ["sensor", "text_sensor"]
 CONF_DIO1_PIN = "dio1_pin"
 CONF_DIO2_PIN = "dio2_pin"
