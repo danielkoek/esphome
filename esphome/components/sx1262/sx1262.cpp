@@ -2,10 +2,6 @@
 #include "esphome/core/log.h"
 namespace esphome {
 namespace sx1262 {
-#define SX126X_DIO2_AS_RF_SWITCH
-#define SX126X_RXEN 38
-#define SX126X_TXEN RADIOLIB_NC
-#define SX126X_DIO3_TCXO_VOLTAGE 1.8
 // flag to indicate that a packet was received
 volatile bool receivedFlag = false;
 
@@ -64,12 +60,8 @@ void SX1262Component::initialize() {
   int state = this->radio.begin(freq, bw, sf, cr, syncWord, power, preamble, tcxoVoltage, ldo);
   if (state == RADIOLIB_ERR_NONE) {
     ESP_LOGD(TAG, "Success, setting swich");
-    state = radio.setDio2AsRfSwitch(true);
-    if (state == RADIOLIB_ERR_NONE)
-      ESP_LOGD(TAG, "Success, setting switch pin");
-
     // SX1262 rf switch order: setRfSwitchPins(rxEn, txEn);
-    radio.setRfSwitchPins(this->dio2_pin_->get_pin(), RADIOLIB_NC);
+    radio.setRfSwitchPins(this->rf_switch_pin_->get_pin(), RADIOLIB_NC);
     radio.setPacketReceivedAction(setReceiveFlag);
     state = radio.startReceive();
     if (state == RADIOLIB_ERR_NONE) {

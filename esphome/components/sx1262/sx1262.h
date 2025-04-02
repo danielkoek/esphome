@@ -16,7 +16,7 @@ class SX1262Component : public Component,
   void set_reset_pin(InternalGPIOPin *reset) { this->reset_pin_ = reset; }
   void set_busy_pin(InternalGPIOPin *busy) { this->busy_pin_ = busy; }
   void set_dio1_pin(InternalGPIOPin *dio1) { this->dio1_pin_ = dio1; }
-  void set_dio2_pin(InternalGPIOPin *dio2) { this->dio2_pin_ = dio2; }
+  void set_rf_switch_pin(InternalGPIOPin *rf_switch) { this->rf_switch_pin_ = rf_switch; }
   void set_repeater(bool enable) { repeater_enabled_ = enable; }
   virtual void initialize() = 0;
 
@@ -33,7 +33,7 @@ class SX1262Component : public Component,
   bool repeater_enabled_ = false;
   InternalGPIOPin *internal_cs_pin_;
   InternalGPIOPin *dio1_pin_;
-  InternalGPIOPin *dio2_pin_;
+  InternalGPIOPin *rf_switch_pin_;
   InternalGPIOPin *reset_pin_;
   InternalGPIOPin *busy_pin_;
 };
