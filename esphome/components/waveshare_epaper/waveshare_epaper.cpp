@@ -1833,9 +1833,100 @@ void WaveshareEPaper2P9InV2R2::set_full_update_every(uint32_t full_update_every)
   this->full_update_every_ = full_update_every;
 }
 // ========================================================
+//     Good Display 7.5in black/white
+// Datasheet:
+//  - https://files.seeedstudio.com/wiki/Other_Display/750-epaper/EN-Image_to_EPD_Instruction_Manual.pdf
+// Software example:
+//  - https://files.seeedstudio.com/wiki/Other_Display/750-epaper/GDEY075T7%20ESP32%20Sample%20Code.zip
+// ========================================================
+
+void GDEY075T7::deep_sleep() {
+  // EPD_DeepSleep
+}
+
+void GDEY075T7::init_full_() {
+  // EQUAL TO EPD_Init
+  this->reset_();
+  this->command(0x01);  // OWER SETTING
+  this->data(0x07);
+  this->data(0x07);  // VGH=20V,VGL=-20V
+  this->data(0x3f);  // VDH=15V
+  this->data(0x3f);  // VDL=-15V
+  // Enhanced display drive(Add 0x06 command)
+  this->command(0x06);  // Booster Soft Start
+  this->data(0x17);
+  this->data(0x17);
+  this->data(0x28);
+  this->data(0x17);
+  this->command(0x04);  // POWER ON
+  this->wait_until_idle_();
+  this->command(0x00);  // PANEL SETTING
+  this->data(0x1F);     // KW-3f   KWR-2F BWROTP 0f BWOTP 1f
+
+  this->command(0x61);  // tres
+  this->data(0x03);     // source 800
+  this->data(0x20);
+  this->data(0x01);  // gate 480
+  this->data(0xE0);
+
+  this->command(0X15);
+  this->data(0x00);
+
+  this->command(0X50);  // VCOM AND DATA INTERVAL SETTING
+  this->data(0x10);
+  this->data(0x07);
+
+  this->command(0X60);  // TCON SETTING
+  this->data(0x22);
+}
+
+// initialzie for partial update
+void GDEY075T7::init_partial_() {
+  // EPD_Init_Part
+}
+
+void HOT GDEY075T7::display() {
+  bool full_update = this->at_update_ == 0;
+
+  this->init_full_();
+
+  if (full_update) {
+    // DO FULL UPDATE
+    // EPD_Init(); //Full screen refresh initialization.
+    // EPD_WhiteScreen_White(); //Clear screen function.
+    ESP_LOGD(TAG, "full update done");
+  } else {
+    // EPD_WhiteScreen_White_Basemap();
+    this->init_partial_();  // fix with EPD_Init_Part
+    // DO PARTIAL UPDATE
+    // EPD_Dis_PartAll(gImage_p1);
+    ESP_LOGD(TAG, "partial update done");
+  }
+
+  this->at_update_ = (this->at_update_ + 1) % this->full_update_every_;
+  // COMMAND deep sleep
+  this->deep_sleep();
+}
+
+void GDEY075T7::set_full_update_every(uint32_t full_update_every) { this->full_update_every_ = full_update_every; }
+
+int GDEY075T7::get_width_internal() { return 480; }
+int GDEY075T7::get_height_internal() { return 800; }
+void GDEY075T7::dump_config() {
+  LOG_DISPLAY("", "E-Paper (Good Display)", this);
+  ESP_LOGCONFIG(TAG, "  Model: 7.5in Greyscale GDEY075T7");
+  LOG_PIN("  Reset Pin: ", this->reset_pin_);
+  LOG_PIN("  DC Pin: ", this->dc_pin_);
+  LOG_PIN("  Busy Pin: ", this->busy_pin_);
+  ESP_LOGCONFIG(TAG, "  Full Update Every: %" PRIu32, this->full_update_every_);
+  LOG_UPDATE_INTERVAL(this);
+}
+
+// ========================================================
 //     Good Display 2.9in black/white
 // Datasheet:
 //  - https://files.seeedstudio.com/wiki/Other_Display/29-epaper/GDEY029T94.pdf
+//  Software example:
 //  -
 //  https://github.com/Allen-Kuang/e-ink_Demo/blob/main/2.9%20inch%20E-paper%20-%20monocolor%20128x296/example/Display_EPD_W21.cpp
 // ========================================================
