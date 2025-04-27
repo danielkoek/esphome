@@ -1901,14 +1901,47 @@ void GDEY075T7::init_partial_() {
   this->data(0xE5);
   this->data(0x6E);
 }
-void GDEY075T7::initialize() {}
+void GDEY075T7::initialize() {
+  this->command(0x01);  // POWER SETTING
+  this->data(0x07);
+  this->data(0x07);  // VGH=20V,VGL=-20V
+  this->data(0x3f);  // VDH=15V
+  this->data(0x3f);  // VDL=-15V
+
+  // Enhanced display drive(Add 0x06 command)
+  this->command(0x06);  // Booster Soft Start
+  this->data(0x17);
+  this->data(0x17);
+  this->data(0x28);
+  this->data(0x17);
+
+  this->command(0x04);  // POWER ON
+  delay(100);
+
+  this->wait_until_idle_();
+
+  this->command(0X00);  // PANNEL SETTING
+  this->data(0x1F);     // KW-3f   KWR-2F BWROTP 0f BWOTP 1f
+
+  this->command(0x61);  // tres
+  this->data(this->get_width_internal() >> 8);
+  this->data(this->get_width_internal() & 0xFF);
+  this->data(this->get_height_internal() >> 8);
+  this->data(this->get_height_internal() & 0xFF);
+
+  this->command(0X15);
+  this->data(0x00);
+
+  this->command(0X50);  // VCOM AND DATA INTERVAL SETTING
+  this->data(0x10);
+  this->data(0x07);
+
+  this->command(0X60);  // TCON SETTING
+  this->data(0x22);
+}
 void GDEY075T7::partial_write_(const unsigned char *datas) {
   unsigned int i;
   unsigned int x_start = 0, y_start = 0, x_end, y_end;
-  unsigned int PART_COLUMN = this->get_height_internal(), PART_LINE = this->get_width_internal();
-
-  x_end = x_start + PART_LINE - 1;
-  y_end = y_start + PART_COLUMN - 1;
 
   this->command(0x50);
   this->data(0xA9);
@@ -1930,9 +1963,12 @@ void GDEY075T7::partial_write_(const unsigned char *datas) {
   this->data(0x01);
 
   this->command(0x13);  // writes New data to SRAM.
-  for (i = 0; i < PART_COLUMN * PART_LINE / 8; i++) {
-    this->data(datas[i]);
+  this->start_data_();
+  for (uint32_t i = 0; i < this->get_buffer_length_(); i++) {
+    this->write_byte(this->buffer_[i]);
   }
+  this->end_data_();
+  // this is the "EDP_UPDATE"
   this->command(0x12);  // DISPLAY REFRESH
   delay(1);
   this->wait_until_idle_();
