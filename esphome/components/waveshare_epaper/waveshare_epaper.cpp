@@ -1839,133 +1839,203 @@ void WaveshareEPaper2P9InV2R2::set_full_update_every(uint32_t full_update_every)
 // Software example:
 //  - https://files.seeedstudio.com/wiki/Other_Display/750-epaper/GDEY075T7%20ESP32%20Sample%20Code.zip
 // ========================================================
-
-void GDEY075T7::deep_sleep() {
-  this->command(0X02);       // power off
-  this->wait_until_idle_();  // waiting for the electronic paper IC to release the idle signal
-}
-
-// initialzie for partial update
-void GDEY075T7::init_partial_() {
-  // EQUAL TO EPD_Init_Part
-  this->reset_();
-  this->command(0X00);  // //PANNEL SETTING
-  this->data(0x1F);     // KW-3f   KWR-2F BWROTP 0f BWOTP 1f
-  this->command(0x04);  // POWER ON
-  delay(10);
-  this->wait_until_idle_();  // waiting for the electronic paper IC to release the idle signal
-
-  this->command(0xE0);
-  this->data(0x02);
-  this->data(0xE5);
-  this->data(0x6E);
-  this->command(0x50);
-  this->data(0xA9);
-  this->data(0x07);
-  delay(10);
-  this->command(0x91);  // This command makes the display enter partial mode
-  this->command(0x90);  // resolution setting
-  this->data(0);
-  this->data((this->get_width_internal() - 1) % 256);
-  this->data(0);
-  this->data(0);
-  this->data(((this->get_height_internal() - 1)) / 256);
-  this->data(((this->get_height_internal() - 1)) % 256);
-  this->data(0x01);
-}
-void GDEY075T7::initialize() {
-  for (size_t i = 0; i < this->get_buffer_length_(); i++) {
-    this->old_buffer_[i] = 0xFF;
+bool GDEY075T7::wait_until_idle_() {
+  if (this->busy_pin_ == nullptr) {
+    return true;
   }
-  this->command(0x01);  // POWER SETTING
-  this->data(0x07);
-  this->data(0x07);  // VGH=20V,VGL=-20V
-  this->data(0x3f);  // VDH=15V
-  this->data(0x3f);  // VDL=-15V
 
-  // Enhanced display drive(Add 0x06 command)
-  this->command(0x06);  // Booster Soft Start
+  const uint32_t start = millis();
+  while (this->busy_pin_->digital_read()) {
+    this->command(0x71);
+    if (millis() - start > this->idle_timeout_()) {
+      ESP_LOGE(TAG, "Timeout while displaying image!");
+      return false;
+    }
+    App.feed_wdt();
+    delay(10);
+  }
+  return true;
+}
+
+void GDEY075T7::reset_() {
+  if (this->reset_pin_ != nullptr) {
+    this->reset_pin_->digital_write(true);
+    delay(20);
+    this->reset_pin_->digital_write(false);
+    delay(2);
+    this->reset_pin_->digital_write(true);
+    delay(20);
+  }
+}
+
+void GDEY075T7::turn_on_display_() {
+  this->command(0x12);
+  delay(100);  // NOLINT
+  this->wait_until_idle_();
+}
+
+void GDEY075T7::initialize() {
+  this->reset_();
+
+  // COMMAND POWER SETTING
+  this->command(0x01);
+  this->data(0x07);
+  this->data(0x07);
+  this->data(0x3f);
+  this->data(0x3f);
+
+  // COMMAND BOOSTER SOFT START
+  this->command(0x06);
   this->data(0x17);
   this->data(0x17);
   this->data(0x28);
   this->data(0x17);
 
-  this->command(0x04);  // POWER ON
-  delay(100);
-
+  // COMMAND POWER DRIVER HAT UP
+  this->command(0x04);
+  delay(100);  // NOLINT
   this->wait_until_idle_();
 
-  this->command(0X00);  // PANNEL SETTING
-  this->data(0x1F);     // KW-3f   KWR-2F BWROTP 0f BWOTP 1f
+  // COMMAND PANEL SETTING
+  this->command(0x00);
+  this->data(0x1F);
 
-  this->command(0x61);  // tres
-  this->data(0x03);     // source 800
+  // COMMAND RESOLUTION SETTING
+  this->command(0x61);
+  this->data(0x03);
   this->data(0x20);
-  this->data(0x01);  // gate 480
+  this->data(0x01);
   this->data(0xE0);
 
-  this->command(0X15);
+  // COMMAND DUAL SPI MM_EN, DUSPI_EN
+  this->command(0x15);
   this->data(0x00);
 
-  this->command(0X50);  // VCOM AND DATA INTERVAL SETTING
+  // COMMAND VCOM AND DATA INTERVAL SETTING
+  this->command(0x50);
   this->data(0x10);
   this->data(0x07);
 
-  this->command(0X60);  // TCON SETTING
+  // COMMAND TCON SETTING
+  this->command(0x60);
   this->data(0x22);
-}
-void HOT GDEY075T7::display() {
-  bool full_update = this->at_update_ == 0;
-  if (!full_update) {
-    this->init_partial_();
-  }
-  // old data
-  this->command(0x10);
-  this->start_data_();
-  for (uint32_t i = 0; i < this->get_buffer_length_(); i++) {
-    if (full_update) {
-      this->write_byte(0x00);  // Otherwhise is 00
-    } else {
-      this->write_byte(this->old_buffer_[i]);
-    }
-  }
-  this->end_data_();
-  delay(2);
-  this->command(0x13);  // writes New data to SRAM.
-  delay(2);
-  this->start_data_();
-  for (uint32_t i = 0; i < this->get_buffer_length_(); i++) {
-    this->write_byte(this->buffer_[i]);
-    this->old_buffer_[i] = this->buffer_[i];
-  }
-  this->end_data_();
-  // this is the "EDP_UPDATE"
-  this->command(0x12);  // DISPLAY REFRESH
-  delay(1);
-  this->wait_until_idle_();
-  if (full_update) {
-    ESP_LOGD(TAG, "full update done");
-  } else {
-    this->command(0x92);  // partial out
-    ESP_LOGD(TAG, "partial update done");
-  }
-  this->at_update_ = (this->at_update_ + 1) % this->full_update_every_;
-  // COMMAND deep sleep
-  this->deep_sleep();
+
+  // COMMAND ENABLE FAST UPDATE
+  this->command(0xE0);
+  this->data(0x02);
+  this->command(0xE5);
+  this->data(0x5A);
+
+  // COMMAND POWER DRIVER HAT DOWN
+  this->command(0x02);
 }
 
-void GDEY075T7::set_full_update_every(uint32_t full_update_every) { this->full_update_every_ = full_update_every; }
+void HOT GDEY075T7::display() {
+  uint32_t buf_len = this->get_buffer_length_();
+
+  this->command(0x04);
+  delay(200);  // NOLINT
+  this->wait_until_idle_();
+
+  if (this->full_update_every_ == 1) {
+    this->command(0x13);
+    for (uint32_t i = 0; i < buf_len; i++) {
+      this->data(~(this->buffer_[i]));
+    }
+
+    this->turn_on_display_();
+
+    this->command(0x02);
+    this->wait_until_idle_();
+    return;
+  }
+
+  this->command(0x50);
+  this->data(0xA9);
+  this->data(0x07);
+
+  if (this->at_update_ == 0) {
+    // Enable fast refresh
+    this->command(0xE5);
+    this->data(0x5A);
+
+    this->command(0x92);
+
+    this->command(0x10);
+    delay(2);
+    for (uint32_t i = 0; i < buf_len; i++) {
+      this->data(~(this->buffer_[i]));
+    }
+
+    delay(100);  // NOLINT
+    this->wait_until_idle_();
+
+    this->command(0x13);
+    delay(2);
+    for (uint32_t i = 0; i < buf_len; i++) {
+      this->data(this->buffer_[i]);
+    }
+
+    delay(100);  // NOLINT
+    this->wait_until_idle_();
+
+    this->turn_on_display_();
+
+  } else {
+    // Enable partial refresh
+    this->command(0xE5);
+    this->data(0x6E);
+
+    // Activate partial refresh and set window bounds
+    this->command(0x91);
+    this->command(0x90);
+
+    this->data(0x00);
+    this->data(0x00);
+    this->data((get_width_internal() - 1) >> 8 & 0xFF);
+    this->data((get_width_internal() - 1) & 0xFF);
+
+    this->data(0x00);
+    this->data(0x00);
+    this->data((get_height_internal() - 1) >> 8 & 0xFF);
+    this->data((get_height_internal() - 1) & 0xFF);
+
+    this->data(0x01);
+
+    this->command(0x13);
+    delay(2);
+    for (uint32_t i = 0; i < buf_len; i++) {
+      this->data(this->buffer_[i]);
+    }
+
+    delay(100);  // NOLINT
+    this->wait_until_idle_();
+
+    this->turn_on_display_();
+  }
+
+  ESP_LOGV(TAG, "Before command(0x02) (>> power off)");
+  this->command(0x02);
+  this->wait_until_idle_();
+  ESP_LOGV(TAG, "After command(0x02) (>> power off)");
+
+  this->at_update_ = (this->at_update_ + 1) % this->full_update_every_;
+}
 
 int GDEY075T7::get_width_internal() { return 800; }
 int GDEY075T7::get_height_internal() { return 480; }
+uint32_t GDEY075T7::idle_timeout_() { return 10000; }
 void GDEY075T7::dump_config() {
   LOG_DISPLAY("", "E-Paper (Good Display)", this);
   ESP_LOGCONFIG(TAG, "  Model: 7.5in Greyscale GDEY075T7");
+  ESP_LOGCONFIG(TAG, "  Full Update Every: %" PRIu32, this->full_update_every_);
   LOG_PIN("  Reset Pin: ", this->reset_pin_);
   LOG_PIN("  DC Pin: ", this->dc_pin_);
   LOG_PIN("  Busy Pin: ", this->busy_pin_);
-  ESP_LOGCONFIG(TAG, "  Full Update Every: %" PRIu32, this->full_update_every_);
   LOG_UPDATE_INTERVAL(this);
+}
+void WaveshareEPaper7P5InV2P::set_full_update_every(uint32_t full_update_every) {
+  this->full_update_every_ = full_update_every;
 }
 
 // ========================================================
