@@ -1874,6 +1874,9 @@ void GDEY075T7::init_partial_() {
   this->data(0x01);
 }
 void GDEY075T7::initialize() {
+  for (size_t i = 0; i < this->get_buffer_length_(); i++) {
+    this->old_buffer_[i] = 0xFF;
+  }
   this->command(0x01);  // POWER SETTING
   this->data(0x07);
   this->data(0x07);  // VGH=20V,VGL=-20V
