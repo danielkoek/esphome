@@ -1882,24 +1882,69 @@ void GDEY075T7::init_full_() {
 
 // initialzie for partial update
 void GDEY075T7::init_partial_() {
-  // EPD_Init_Part
-}
+  // EQUAL TO EPD_Init_Part
+  this->reset_();
+  this->command(0X00);  // //PANNEL SETTING
+  this->data(0x1F);     // KW-3f   KWR-2F BWROTP 0f BWOTP 1f
+  this->command(0x04);  // POWER ON
+  delay(100);
+  this->wait_until_idle_();  // waiting for the electronic paper IC to release the idle signal
 
+  this->command(0xE0);
+  this->data(0x02);
+  this->data(0xE5);
+  this->data(0x6E);
+}
+void GDEY075T7::partial_write_(const unsigned char *datas) {
+  unsigned int i;
+  unsigned int x_start = 0, y_start = 0, x_end, y_end;
+  unsigned int PART_COLUMN = this->get_height_internal(), PART_LINE = this->get_width_internal();
+
+  x_end = x_start + PART_LINE - 1;
+  y_end = y_start + PART_COLUMN - 1;
+
+  this->command(0x50);
+  this->data(0xA9);
+  this->data(0x07);
+
+  this->command(0x91);  // This command makes the display enter partial mode
+  this->command(0x90);  // resolution setting
+  this->data(x_start / 256);
+  this->data(x_start % 256);  // x-start
+
+  this->data(x_end / 256);
+  this->data(x_end % 256 - 1);  // x-end
+
+  this->data(y_start / 256);  //
+  this->data(y_start % 256);  // y-start
+
+  this->data(y_end / 256);
+  this->data(y_end % 256 - 1);  // y-end
+  this->data(0x01);
+
+  this->command(0x13);  // writes New data to SRAM.
+  for (i = 0; i < PART_COLUMN * PART_LINE / 8; i++) {
+    this->data(datas[i]);
+  }
+  this->command(0x12);  // DISPLAY REFRESH
+  delay(1);
+  this->wait_until_idle_();
+}
 void HOT GDEY075T7::display() {
   bool full_update = this->at_update_ == 0;
 
   this->init_full_();
 
   if (full_update) {
-    // DO FULL UPDATE
-    // EPD_Init(); //Full screen refresh initialization.
-    // EPD_WhiteScreen_White(); //Clear screen function.
+    // DO FULL UPDATE, by basically setting the whole thing to white
+    this->white_screen_(false);
     ESP_LOGD(TAG, "full update done");
   } else {
-    // EPD_WhiteScreen_White_Basemap();
-    this->init_partial_();  // fix with EPD_Init_Part
-    // DO PARTIAL UPDATE
-    // EPD_Dis_PartAll(gImage_p1);
+    // partial update, sets the screen to white first, then sets the partial init, and writes it
+    this->white_screen_(true);
+    this->init_partial_();
+    // in the partial write, we will also refresh the screen
+    this->partial_write_(this->buffer_);
     ESP_LOGD(TAG, "partial update done");
   }
 
@@ -1907,7 +1952,25 @@ void HOT GDEY075T7::display() {
   // COMMAND deep sleep
   this->deep_sleep();
 }
-
+void GDEY075T7::white_screen_(bool baseMap) {
+  int array_size = this->get_width_internal() * this->get_height_internal() / 8;
+  unsigned int i;
+  // Write Data
+  this->command(0x10);
+  for (i = 0; i < array_size; i++) {
+    if (baseMap)
+      this->data(0xFF);  // Basemap is FF
+    else
+      this->data(0x00);  // Otherwhise is 00
+  }
+  this->command(0x13);
+  for (i = 0; i < array_size; i++) {
+    this->data(0x00);
+  }
+  this->command(0x12);  // DISPLAY REFRESH
+  delay(1);
+  this->wait_until_idle_();
+}
 void GDEY075T7::set_full_update_every(uint32_t full_update_every) { this->full_update_every_ = full_update_every; }
 
 int GDEY075T7::get_width_internal() { return 480; }
