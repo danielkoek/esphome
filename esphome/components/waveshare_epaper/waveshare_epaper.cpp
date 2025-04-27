@@ -1841,7 +1841,13 @@ void WaveshareEPaper2P9InV2R2::set_full_update_every(uint32_t full_update_every)
 // ========================================================
 
 void GDEY075T7::deep_sleep() {
-  // EPD_DeepSleep
+  this->command(0X50);       // VCOM AND DATA INTERVAL SETTING
+  this->data(0xf7);          // WBmode:VBDF 17|D7 VBDW 97 VBDB 57    WBRmode:VBDF F7 VBDW 77 VBDB 37  VBDR B7
+  this->command(0X02);       // power off
+  this->wait_until_idle_();  // waiting for the electronic paper IC to release the idle signal
+  delay(100);                //!!!The delay here is necessary, 200uS at least!!!
+  this->command(0X07);       // deep sleep
+  this->data(0xA5);
 }
 
 void GDEY075T7::init_full_() {
@@ -1895,6 +1901,7 @@ void GDEY075T7::init_partial_() {
   this->data(0xE5);
   this->data(0x6E);
 }
+void GDEY075T7::initialize() {}
 void GDEY075T7::partial_write_(const unsigned char *datas) {
   unsigned int i;
   unsigned int x_start = 0, y_start = 0, x_end, y_end;

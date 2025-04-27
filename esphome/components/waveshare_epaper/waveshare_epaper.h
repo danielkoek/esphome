@@ -297,6 +297,7 @@ class GDEW029T5 : public WaveshareEPaper {
 
 class GDEY075T7 : public WaveshareEPaper {
  public:
+  void initialize() override;
   void display() override;
   void dump_config() override;
   void deep_sleep() override;
