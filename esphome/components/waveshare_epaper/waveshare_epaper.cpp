@@ -1853,13 +1853,8 @@ void GDEY075T7::wakeup() {
   this->data(0x6E);
 }
 void GDEY075T7::deep_sleep() {
-  this->command(0X50);       // VCOM AND DATA INTERVAL SETTING
-  this->data(0xf7);          // WBmode:VBDF 17|D7 VBDW 97 VBDB 57    WBRmode:VBDF F7 VBDW 77 VBDB 37  VBDR B7
   this->command(0X02);       // power off
   this->wait_until_idle_();  // waiting for the electronic paper IC to release the idle signal
-  delay(100);                //!!!The delay here is necessary, 200uS at least!!!
-  this->command(0X07);       // deep sleep
-  this->data(0xA5);
 }
 
 // initialzie for partial update
@@ -1930,7 +1925,6 @@ void GDEY075T7::initialize() {
 }
 void HOT GDEY075T7::display() {
   bool full_update = this->at_update_ == 0;
-  this->wakeup();
   if (full_update) {
     // DO FULL UPDATE, by basically setting the whole thing to white
     this->white_screen_(true);

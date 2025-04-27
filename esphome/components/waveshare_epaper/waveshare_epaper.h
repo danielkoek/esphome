@@ -314,9 +314,6 @@ class GDEY075T7 : public WaveshareEPaper {
  private:
   uint32_t full_update_every_{30};
   uint32_t at_update_{0};
-  bool deep_sleep_between_updates_{false};
-  bool power_is_on_{false};
-  bool is_deep_sleep_{false};
   uint8_t *old_buffer_{nullptr};
 };
 
