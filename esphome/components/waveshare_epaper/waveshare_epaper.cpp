@@ -1839,19 +1839,7 @@ void WaveshareEPaper2P9InV2R2::set_full_update_every(uint32_t full_update_every)
 // Software example:
 //  - https://files.seeedstudio.com/wiki/Other_Display/750-epaper/GDEY075T7%20ESP32%20Sample%20Code.zip
 // ========================================================
-void GDEY075T7::wakeup() {
-  this->reset_pin_->digital_write(false);
-  delay(10);
-  this->reset_pin_->digital_write(true);
-  delay(10);
-  this->command(0x04);
-  delay(100);
-  this->wait_until_idle_();
-  this->command(0xE0);
-  this->data(0x02);
-  this->command(0xE5);
-  this->data(0x6E);
-}
+
 void GDEY075T7::deep_sleep() {
   this->command(0X02);       // power off
   this->wait_until_idle_();  // waiting for the electronic paper IC to release the idle signal
@@ -1908,10 +1896,10 @@ void GDEY075T7::initialize() {
   this->data(0x1F);     // KW-3f   KWR-2F BWROTP 0f BWOTP 1f
 
   this->command(0x61);  // tres
-  this->data(this->get_width_internal() >> 8);
-  this->data(this->get_width_internal() & 0xFF);
-  this->data(this->get_height_internal() >> 8);
-  this->data(this->get_height_internal() & 0xFF);
+  this->data(0x03);     // source 800
+  this->data(0x20);
+  this->data(0x01);  // gate 480
+  this->data(0xE0);
 
   this->command(0X15);
   this->data(0x00);
@@ -1925,19 +1913,18 @@ void GDEY075T7::initialize() {
 }
 void HOT GDEY075T7::display() {
   bool full_update = this->at_update_ == 0;
-  if (full_update) {
-    // DO FULL UPDATE, by basically setting the whole thing to white
-    this->white_screen_(true);
-    this->white_screen_(false);
-  } else {
-    // partial update, sets the screen to white first, then sets the partial init, and writes it
+  if (!full_update) {
     this->init_partial_();
   }
   // old data
   this->command(0x10);
   this->start_data_();
   for (uint32_t i = 0; i < this->get_buffer_length_(); i++) {
-    this->write_byte(this->old_buffer_[i]);
+    if (full_update) {
+      this->write_byte(0x00);  // Otherwhise is 00
+    } else {
+      this->write_byte(this->old_buffer_[i]);
+    }
   }
   this->end_data_();
   delay(2);
@@ -1963,27 +1950,11 @@ void HOT GDEY075T7::display() {
   // COMMAND deep sleep
   this->deep_sleep();
 }
-void GDEY075T7::white_screen_(bool baseMap) {
-  // Write Data
-  this->command(0x10);
-  for (size_t i = 0; i < this->get_buffer_length_(); i++) {
-    if (baseMap)
-      this->data(0xFF);  // Basemap is FF
-    else
-      this->data(0x00);  // Otherwhise is 00
-  }
-  this->command(0x13);
-  for (size_t i = 0; i < this->get_buffer_length_(); i++) {
-    this->data(0x00);
-  }
-  this->command(0x12);  // DISPLAY REFRESH
-  delay(1);
-  this->wait_until_idle_();
-}
+
 void GDEY075T7::set_full_update_every(uint32_t full_update_every) { this->full_update_every_ = full_update_every; }
 
-int GDEY075T7::get_width_internal() { return 480; }
-int GDEY075T7::get_height_internal() { return 800; }
+int GDEY075T7::get_width_internal() { return 800; }
+int GDEY075T7::get_height_internal() { return 480; }
 void GDEY075T7::dump_config() {
   LOG_DISPLAY("", "E-Paper (Good Display)", this);
   ESP_LOGCONFIG(TAG, "  Model: 7.5in Greyscale GDEY075T7");

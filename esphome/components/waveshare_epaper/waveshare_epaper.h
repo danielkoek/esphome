@@ -306,8 +306,6 @@ class GDEY075T7 : public WaveshareEPaper {
 
  protected:
   void init_partial_();
-  void wakeup();
-  void white_screen_(bool basemap);
   int get_width_internal() override;
   int get_height_internal() override;
 
