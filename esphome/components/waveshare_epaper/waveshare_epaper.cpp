@@ -1839,7 +1839,19 @@ void WaveshareEPaper2P9InV2R2::set_full_update_every(uint32_t full_update_every)
 // Software example:
 //  - https://files.seeedstudio.com/wiki/Other_Display/750-epaper/GDEY075T7%20ESP32%20Sample%20Code.zip
 // ========================================================
-
+void GDEY075T7::wakeup() {
+  this->reset_pin_->digital_write(false);
+  delay(10);
+  this->reset_pin_->digital_write(true);
+  delay(10);
+  this->command(0x04);
+  delay(100);
+  this->wait_until_idle_();
+  this->command(0xE0);
+  this->data(0x02);
+  this->command(0xE5);
+  this->data(0x6E);
+}
 void GDEY075T7::deep_sleep() {
   this->command(0X50);       // VCOM AND DATA INTERVAL SETTING
   this->data(0xf7);          // WBmode:VBDF 17|D7 VBDW 97 VBDB 57    WBRmode:VBDF F7 VBDW 77 VBDB 37  VBDR B7
@@ -1850,42 +1862,6 @@ void GDEY075T7::deep_sleep() {
   this->data(0xA5);
 }
 
-void GDEY075T7::init_full_() {
-  // EQUAL TO EPD_Init
-  this->reset_();
-  this->command(0x01);  // OWER SETTING
-  this->data(0x07);
-  this->data(0x07);  // VGH=20V,VGL=-20V
-  this->data(0x3f);  // VDH=15V
-  this->data(0x3f);  // VDL=-15V
-  // Enhanced display drive(Add 0x06 command)
-  this->command(0x06);  // Booster Soft Start
-  this->data(0x17);
-  this->data(0x17);
-  this->data(0x28);
-  this->data(0x17);
-  this->command(0x04);  // POWER ON
-  this->wait_until_idle_();
-  this->command(0x00);  // PANEL SETTING
-  this->data(0x1F);     // KW-3f   KWR-2F BWROTP 0f BWOTP 1f
-
-  this->command(0x61);  // tres
-  this->data(0x03);     // source 800
-  this->data(0x20);
-  this->data(0x01);  // gate 480
-  this->data(0xE0);
-
-  this->command(0X15);
-  this->data(0x00);
-
-  this->command(0X50);  // VCOM AND DATA INTERVAL SETTING
-  this->data(0x10);
-  this->data(0x07);
-
-  this->command(0X60);  // TCON SETTING
-  this->data(0x22);
-}
-
 // initialzie for partial update
 void GDEY075T7::init_partial_() {
   // EQUAL TO EPD_Init_Part
@@ -1893,13 +1869,26 @@ void GDEY075T7::init_partial_() {
   this->command(0X00);  // //PANNEL SETTING
   this->data(0x1F);     // KW-3f   KWR-2F BWROTP 0f BWOTP 1f
   this->command(0x04);  // POWER ON
-  delay(100);
+  delay(10);
   this->wait_until_idle_();  // waiting for the electronic paper IC to release the idle signal
 
   this->command(0xE0);
   this->data(0x02);
   this->data(0xE5);
   this->data(0x6E);
+  this->command(0x50);
+  this->data(0xA9);
+  this->data(0x07);
+  delay(10);
+  this->command(0x91);  // This command makes the display enter partial mode
+  this->command(0x90);  // resolution setting
+  this->data(0);
+  this->data((this->get_width_internal() - 1) % 256);
+  this->data(0);
+  this->data(0);
+  this->data(((this->get_height_internal() - 1)) / 256);
+  this->data(((this->get_height_internal() - 1)) % 256);
+  this->data(0x01);
 }
 void GDEY075T7::initialize() {
   this->command(0x01);  // POWER SETTING
@@ -1939,75 +1928,58 @@ void GDEY075T7::initialize() {
   this->command(0X60);  // TCON SETTING
   this->data(0x22);
 }
-void GDEY075T7::partial_write_(const unsigned char *datas) {
-  unsigned int i;
-  unsigned int x_start = 0, y_start = 0, x_end, y_end;
-
-  this->command(0x50);
-  this->data(0xA9);
-  this->data(0x07);
-
-  this->command(0x91);  // This command makes the display enter partial mode
-  this->command(0x90);  // resolution setting
-  this->data(x_start / 256);
-  this->data(x_start % 256);  // x-start
-
-  this->data(x_end / 256);
-  this->data(x_end % 256 - 1);  // x-end
-
-  this->data(y_start / 256);  //
-  this->data(y_start % 256);  // y-start
-
-  this->data(y_end / 256);
-  this->data(y_end % 256 - 1);  // y-end
-  this->data(0x01);
-
+void HOT GDEY075T7::display() {
+  bool full_update = this->at_update_ == 0;
+  this->wakeup();
+  if (full_update) {
+    // DO FULL UPDATE, by basically setting the whole thing to white
+    this->white_screen_(true);
+    this->white_screen_(false);
+  } else {
+    // partial update, sets the screen to white first, then sets the partial init, and writes it
+    this->init_partial_();
+  }
+  // old data
+  this->command(0x10);
+  this->start_data_();
+  for (uint32_t i = 0; i < this->get_buffer_length_(); i++) {
+    this->write_byte(this->old_buffer_[i]);
+  }
+  this->end_data_();
+  delay(2);
   this->command(0x13);  // writes New data to SRAM.
+  delay(2);
   this->start_data_();
   for (uint32_t i = 0; i < this->get_buffer_length_(); i++) {
     this->write_byte(this->buffer_[i]);
+    this->old_buffer_[i] = this->buffer_[i];
   }
   this->end_data_();
   // this is the "EDP_UPDATE"
   this->command(0x12);  // DISPLAY REFRESH
   delay(1);
   this->wait_until_idle_();
-}
-void HOT GDEY075T7::display() {
-  bool full_update = this->at_update_ == 0;
-
-  this->init_full_();
-
   if (full_update) {
-    // DO FULL UPDATE, by basically setting the whole thing to white
-    this->white_screen_(false);
     ESP_LOGD(TAG, "full update done");
   } else {
-    // partial update, sets the screen to white first, then sets the partial init, and writes it
-    this->white_screen_(true);
-    this->init_partial_();
-    // in the partial write, we will also refresh the screen
-    this->partial_write_(this->buffer_);
+    this->command(0x92);  // partial out
     ESP_LOGD(TAG, "partial update done");
   }
-
   this->at_update_ = (this->at_update_ + 1) % this->full_update_every_;
   // COMMAND deep sleep
   this->deep_sleep();
 }
 void GDEY075T7::white_screen_(bool baseMap) {
-  int array_size = this->get_width_internal() * this->get_height_internal() / 8;
-  unsigned int i;
   // Write Data
   this->command(0x10);
-  for (i = 0; i < array_size; i++) {
+  for (size_t i = 0; i < this->get_buffer_length_(); i++) {
     if (baseMap)
       this->data(0xFF);  // Basemap is FF
     else
       this->data(0x00);  // Otherwhise is 00
   }
   this->command(0x13);
-  for (i = 0; i < array_size; i++) {
+  for (size_t i = 0; i < this->get_buffer_length_(); i++) {
     this->data(0x00);
   }
   this->command(0x12);  // DISPLAY REFRESH
