@@ -145,7 +145,7 @@ MODELS = {
     "2.90inv2": ("a", WaveshareEPaperTypeAModel.WAVESHARE_EPAPER_2_9_IN_V2),
     "gdew029t5": ("c", GDEW029T5),
     "gdey029t94": ("c", GDEY029T94),
-    "gdey075T7": ("c", GDEY075T7),
+    "gdey075t7": ("c", GDEY075T7),
     "gdey042t81": ("c", GDEY042T81),
     "2.70in": ("b", WaveshareEPaper2P7In),
     "2.70in-b": ("b", WaveshareEPaper2P7InB),
