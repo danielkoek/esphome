@@ -39,6 +39,9 @@ void GDEY075T7::reset_() {
   }
 }
 void GDEY075T7::init_partial_() {
+  this->command(0x50);
+  this->data(0xA9);
+  this->data(0x07);
   this->command(0x91);  // PARTIAL IN
 
   this->command(0x90);  // PARTIAL WINDOW
