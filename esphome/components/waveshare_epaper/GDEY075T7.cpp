@@ -101,8 +101,10 @@ void HOT GDEY075T7::display() {
 
   if (this->full_update_every_ == 1) {
     if (this->at_update_ == 0) {
+      ESP_LOGD(TAG, "Full update");
       this->init_full_();
     } else {
+      ESP_LOGD(TAG, "Partial update");
       this->init_partial_();
     }
 
