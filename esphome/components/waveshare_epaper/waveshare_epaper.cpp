@@ -1833,10 +1833,6 @@ void WaveshareEPaper2P9InV2R2::set_full_update_every(uint32_t full_update_every)
   this->full_update_every_ = full_update_every;
 }
 
-void WaveshareEPaper7P5InV2P::set_full_update_every(uint32_t full_update_every) {
-  this->full_update_every_ = full_update_every;
-}
-
 // ========================================================
 //     Good Display 2.9in black/white
 // Datasheet:
