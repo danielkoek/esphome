@@ -93,40 +93,60 @@ void GDEY075T7::init_full_() {
   this->data(0x22);
 }
 void HOT GDEY075T7::display() {
-  uint32_t buf_len = this->get_buffer_length_();
+  bool full_update = this->at_update_ == 0;
+  if (full_update) {
+    this->init_full_();
+  } else {
+    // this->init_partial_();
+    this->command(0x91);  // partial in
+    // set partial window
+    this->command(0x90);
+    // this->data(0);
+    this->data(0);
+    // this->data(0);
+    this->data((this->get_width_internal() - 1) % 256);
+    this->data(0);
+    this->data(0);
+    this->data(((this->get_height_internal() - 1)) / 256);
+    this->data(((this->get_height_internal() - 1)) % 256);
+    this->data(0x01);
+  }
+  // input old buffer data
+  this->command(0x10);
+  delay(2);
+  this->start_data_();
+  for (size_t i = 0; i < this->get_buffer_length_(); i++) {
+    this->write_byte(this->old_buffer_[i]);
+  }
+  this->end_data_();
+  delay(2);
 
-  this->command(0x04);
-  delay(200);  // NOLINT
+  // COMMAND DATA START TRANSMISSION 2 (B/W only)
+  this->command(0x13);
+  delay(2);
+  this->start_data_();
+  for (size_t i = 0; i < this->get_buffer_length_(); i++) {
+    this->write_byte(this->buffer_[i]);
+    this->old_buffer_[i] = this->buffer_[i];
+  }
+  this->end_data_();
+  delay(2);
+
+  // COMMAND DISPLAY REFRESH
+  this->command(0x12);
+  delay(2);
   this->wait_until_idle_();
 
-  if (this->full_update_every_ == 1) {
-    if (this->at_update_ == 0) {
-      ESP_LOGD(TAG, "Full update");
-      this->init_full_();
-    } else {
-      ESP_LOGD(TAG, "Partial update");
-      this->init_partial_();
-    }
-
-    // Write image data
-    this->command(0x13);  // Write RAM
-    this->start_data_();
-    this->write_array(this->buffer_, this->get_buffer_length_());
-    this->end_data_();
-
-    // Refresh display
-    this->command(0x12);
-    this->wait_until_idle_();
-
-    this->at_update_ = (this->at_update_ + 1) % this->full_update_every_;
+  if (full_update) {
+    ESP_LOGD(TAG, "full update done");
+  } else {
+    this->command(0x92);  // partial out
+    ESP_LOGD(TAG, "partial update done");
   }
 
-  ESP_LOGV(TAG, "Before command(0x02) (>> power off)");
-  this->command(0x02);
-  this->wait_until_idle_();
-  ESP_LOGV(TAG, "After command(0x02) (>> power off)");
-
   this->at_update_ = (this->at_update_ + 1) % this->full_update_every_;
+  // COMMAND deep sleep
+  this->deep_sleep();
 }
 
 int GDEY075T7::get_width_internal() { return 800; }

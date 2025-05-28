@@ -35,6 +35,7 @@ class GDEY075T7 : public WaveshareEPaper {
   uint32_t at_update_{0};
 
  private:
+  uint8_t *old_buffer_{nullptr};
   void reset_();
   void init_partial_();
   void init_full_();
