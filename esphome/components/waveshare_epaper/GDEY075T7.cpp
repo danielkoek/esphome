@@ -15,13 +15,11 @@ namespace esphome {
 namespace waveshare_epaper {
 static const char *const TAG = "waveshare_epaper";
 bool GDEY075T7::wait_until_idle_() {
-  if (this->busy_pin_ == nullptr) {
+  if (this->busy_pin_ == nullptr || !this->busy_pin_->digital_read()) {
     return true;
   }
-
   const uint32_t start = millis();
   while (this->busy_pin_->digital_read()) {
-    this->command(0x71);
     if (millis() - start > this->idle_timeout_()) {
       ESP_LOGE(TAG, "Timeout while displaying image!");
       return false;
@@ -34,12 +32,10 @@ bool GDEY075T7::wait_until_idle_() {
 
 void GDEY075T7::reset_() {
   if (this->reset_pin_ != nullptr) {
-    this->reset_pin_->digital_write(true);
-    delay(20);
     this->reset_pin_->digital_write(false);
-    delay(2);
+    delay(10);
     this->reset_pin_->digital_write(true);
-    delay(20);
+    delay(10);
   }
 }
 void GDEY075T7::init_partial_() {
@@ -108,7 +104,7 @@ void HOT GDEY075T7::display() {
     }
 
     // Write image data
-    this->command(0x10);  // Write RAM
+    this->command(0x13);  // Write RAM
     this->start_data_();
     this->write_array(this->buffer_, this->get_buffer_length_());
     this->end_data_();
