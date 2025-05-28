@@ -97,19 +97,7 @@ void HOT GDEY075T7::display() {
   if (full_update) {
     this->init_full_();
   } else {
-    // this->init_partial_();
-    this->command(0x91);  // partial in
-    // set partial window
-    this->command(0x90);
-    // this->data(0);
-    this->data(0);
-    // this->data(0);
-    this->data((this->get_width_internal() - 1) % 256);
-    this->data(0);
-    this->data(0);
-    this->data(((this->get_height_internal() - 1)) / 256);
-    this->data(((this->get_height_internal() - 1)) % 256);
-    this->data(0x01);
+    this->init_partial_();
   }
   // input old buffer data
   this->command(0x10);
