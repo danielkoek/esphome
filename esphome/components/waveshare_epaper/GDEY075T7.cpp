@@ -131,6 +131,7 @@ void HOT GDEY075T7::display() {
 int GDEY075T7::get_width_internal() { return 800; }
 int GDEY075T7::get_height_internal() { return 480; }
 uint32_t GDEY075T7::idle_timeout_() { return 10000; }
+void GDEY075T7::set_full_update_every(uint32_t full_update_every) { this->full_update_every_ = full_update_every; }
 void GDEY075T7::dump_config() {
   LOG_DISPLAY("", "E-Paper (Good Display)", this);
   ESP_LOGCONFIG(TAG, "  Model: 7.5in Greyscale GDEY075T7");
