@@ -5,15 +5,11 @@ from esphome.const import (
     CONF_ID,
     CONF_SENSORS,
     CONF_BINARY_SENSORS,
-    DEVICE_CLASS_SIGNAL_STRENGTH,
-    STATE_CLASS_MEASUREMENT,
-    UNIT_DECIBEL_MILLIWATT,
-    UNIT_DECIBEL,
 )
 
 CODEOWNERS = ["@danielkoek"]
 DEPENDENCIES = ["sx126x"]
-AUTO_LOAD = []
+AUTO_LOAD = ["text_sensor"]
 
 lora_bthome_receiver_ns = cg.esphome_ns.namespace("lora_bthome_receiver")
 LoRaBTHomeReceiver = lora_bthome_receiver_ns.class_(
