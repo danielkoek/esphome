@@ -1,5 +1,34 @@
 #pragma once
 
+// BTHome Concentrator Component
+//
+// This component collects BTHome BLE advertisements from multiple devices
+// and transmits them via LoRa. It can also include local sensor data.
+//
+// Usage example for adding local sensor data:
+//
+//   // In your sensor's publish_state or update method:
+//   auto concentrator = App.get_bt_home_concentrator();
+//   if (concentrator != nullptr) {
+//     // Temperature in Celsius (0x02 = temperature sint16, 0.01 factor)
+//     concentrator->add_measurement_float(0x02, temperature_value, 0.01);
+//
+//     // Humidity in % (0x03 = humidity uint16, 0.01 factor)
+//     concentrator->add_measurement_float(0x03, humidity_value, 0.01);
+//
+//     // Battery in % (0x01 = battery uint8)
+//     concentrator->add_measurement_uint8(0x01, battery_percent);
+//   }
+//
+// BTHome object IDs reference:
+//   0x01 - Battery (%)
+//   0x02 - Temperature (°C, sint16, 0.01 factor)
+//   0x03 - Humidity (%, uint16, 0.01 factor)
+//   0x04 - Pressure (hPa, uint24, 0.01 factor)
+//   0x05 - Illuminance (lux, uint24, 0.01 factor)
+//   0x0C - Voltage (V, uint16, 0.001 factor)
+//   ... (see BTHome spec for complete list)
+
 #include "esphome/core/component.h"
 #include "esphome/components/esp32_ble_tracker/esp32_ble_tracker.h"
 #include "esphome/components/sx126x/sx126x.h"
@@ -69,6 +98,17 @@ class BTHomeConcentrator : public PollingComponent,
   void set_state_timeout(uint32_t timeout_ms) { this->state_timeout_ms_ = timeout_ms; }
   void set_duty_cycle_percent(float percent) { this->duty_cycle_percent_ = percent; }
 
+  // Add local sensor measurements
+  void add_measurement(uint8_t object_id, const std::vector<uint8_t> &data);
+  void add_measurement_uint8(uint8_t object_id, uint8_t value);
+  void add_measurement_sint8(uint8_t object_id, int8_t value);
+  void add_measurement_uint16(uint8_t object_id, uint16_t value);
+  void add_measurement_sint16(uint8_t object_id, int16_t value);
+  void add_measurement_uint24(uint8_t object_id, uint32_t value);
+  void add_measurement_uint32(uint8_t object_id, uint32_t value);
+  void add_measurement_float(uint8_t object_id, float value, float factor);
+  void clear_local_measurements();
+
  protected:
   // Parse BTHome service data
   optional<BTHomeDeviceState> parse_bthome_data_(const std::vector<uint8_t> &service_data, uint64_t mac_address);
@@ -100,6 +140,10 @@ class BTHomeConcentrator : public PollingComponent,
   float duty_cycle_percent_{1.0};         // 1% duty cycle
 
   bool has_new_data_{false};
+
+  // Local sensor measurements (from this device)
+  std::vector<BTHomeMeasurement> local_measurements_;
+  uint64_t local_mac_address_{0};
 };
 
 }  // namespace bt_home_concentrator

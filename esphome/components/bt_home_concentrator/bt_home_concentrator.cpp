@@ -1,6 +1,7 @@
 #include "bt_home_concentrator.h"
 #include "esphome/core/log.h"
 #include "esphome/core/helpers.h"
+#include <algorithm>
 
 #ifdef USE_ESP32
 
@@ -9,7 +10,21 @@ namespace bt_home_concentrator {
 
 static const char *const TAG = "bt_home_concentrator";
 
-void BTHomeConcentrator::setup() { ESP_LOGCONFIG(TAG, "Setting up BTHome Concentrator..."); }
+void BTHomeConcentrator::setup() {
+  ESP_LOGCONFIG(TAG, "Setting up BTHome Concentrator...");
+
+  // Get this device's MAC address for local measurements
+  uint8_t mac[6];
+  get_mac_address_raw(mac);
+
+  // Convert to uint64_t (little endian)
+  this->local_mac_address_ = 0;
+  for (int i = 0; i < 6; i++) {
+    this->local_mac_address_ |= static_cast<uint64_t>(mac[i]) << (i * 8);
+  }
+
+  ESP_LOGCONFIG(TAG, "  Local MAC: %012llX", this->local_mac_address_);
+}
 
 void BTHomeConcentrator::loop() {
   // Cleanup old states periodically
@@ -311,11 +326,47 @@ std::vector<uint8_t> BTHomeConcentrator::encode_lora_packet_() {
   //     Data (variable)
 
   packet.push_back(0xBF);
-  packet.push_back(0xC0);  // Count devices (limit to max_devices)
-  uint8_t device_count = std::min((size_t) this->max_devices_, this->device_states_.size());
+  packet.push_back(0xC0);
+
+  // Calculate total device count (remote devices + local if has measurements)
+  uint8_t total_devices = this->device_states_.size();
+  bool include_local = !this->local_measurements_.empty();
+  if (include_local) {
+    total_devices++;
+  }
+
+  // Limit to max_devices
+  uint8_t device_count = std::min((uint8_t) this->max_devices_, total_devices);
   packet.push_back(device_count);
 
   uint8_t count = 0;
+
+  // Add local device first if we have local measurements
+  if (include_local && count < device_count) {
+    // Add MAC address (6 bytes, little endian)
+    for (int i = 0; i < 6; i++) {
+      packet.push_back((this->local_mac_address_ >> (i * 8)) & 0xFF);
+    }
+
+    // Add packet ID (0 for local device)
+    packet.push_back(0);
+
+    // Add measurement count
+    packet.push_back(this->local_measurements_.size());
+
+    // Add each measurement
+    for (const auto &measurement : this->local_measurements_) {
+      packet.push_back(measurement.object_id);
+      packet.push_back(measurement.data.size());
+      for (uint8_t byte : measurement.data) {
+        packet.push_back(byte);
+      }
+    }
+
+    count++;
+  }
+
+  // Add remote devices
   for (const auto &entry : this->device_states_) {
     if (count >= device_count)
       break;
@@ -345,7 +396,8 @@ std::vector<uint8_t> BTHomeConcentrator::encode_lora_packet_() {
     count++;
   }
 
-  ESP_LOGI(TAG, "Encoded LoRa packet: %u devices, %u bytes", device_count, packet.size());
+  ESP_LOGI(TAG, "Encoded LoRa packet: %u devices (%u local, %u remote), %u bytes", device_count, include_local ? 1 : 0,
+           count - (include_local ? 1 : 0), packet.size());
 
   return packet;
 }
@@ -420,6 +472,70 @@ void BTHomeConcentrator::cleanup_old_states_() {
       ++it;
     }
   }
+}
+
+void BTHomeConcentrator::add_measurement(uint8_t object_id, const std::vector<uint8_t> &data) {
+  BTHomeMeasurement measurement;
+  measurement.object_id = object_id;
+  measurement.data = data;
+
+  // Replace existing measurement with same object_id or add new one
+  auto it = std::find_if(this->local_measurements_.begin(), this->local_measurements_.end(),
+                         [object_id](const BTHomeMeasurement &m) { return m.object_id == object_id; });
+
+  if (it != this->local_measurements_.end()) {
+    *it = measurement;
+  } else {
+    this->local_measurements_.push_back(measurement);
+  }
+
+  this->has_new_data_ = true;
+  ESP_LOGD(TAG, "Added local measurement: object_id=0x%02X, data_len=%u", object_id, data.size());
+}
+
+void BTHomeConcentrator::add_measurement_uint8(uint8_t object_id, uint8_t value) {
+  std::vector<uint8_t> data = {value};
+  this->add_measurement(object_id, data);
+}
+
+void BTHomeConcentrator::add_measurement_sint8(uint8_t object_id, int8_t value) {
+  std::vector<uint8_t> data = {static_cast<uint8_t>(value)};
+  this->add_measurement(object_id, data);
+}
+
+void BTHomeConcentrator::add_measurement_uint16(uint8_t object_id, uint16_t value) {
+  std::vector<uint8_t> data = {static_cast<uint8_t>(value & 0xFF), static_cast<uint8_t>((value >> 8) & 0xFF)};
+  this->add_measurement(object_id, data);
+}
+
+void BTHomeConcentrator::add_measurement_sint16(uint8_t object_id, int16_t value) {
+  uint16_t unsigned_value = static_cast<uint16_t>(value);
+  std::vector<uint8_t> data = {static_cast<uint8_t>(unsigned_value & 0xFF),
+                               static_cast<uint8_t>((unsigned_value >> 8) & 0xFF)};
+  this->add_measurement(object_id, data);
+}
+
+void BTHomeConcentrator::add_measurement_uint24(uint8_t object_id, uint32_t value) {
+  std::vector<uint8_t> data = {static_cast<uint8_t>(value & 0xFF), static_cast<uint8_t>((value >> 8) & 0xFF),
+                               static_cast<uint8_t>((value >> 16) & 0xFF)};
+  this->add_measurement(object_id, data);
+}
+
+void BTHomeConcentrator::add_measurement_uint32(uint8_t object_id, uint32_t value) {
+  std::vector<uint8_t> data = {static_cast<uint8_t>(value & 0xFF), static_cast<uint8_t>((value >> 8) & 0xFF),
+                               static_cast<uint8_t>((value >> 16) & 0xFF), static_cast<uint8_t>((value >> 24) & 0xFF)};
+  this->add_measurement(object_id, data);
+}
+
+void BTHomeConcentrator::add_measurement_float(uint8_t object_id, float value, float factor) {
+  // Convert float to integer based on factor
+  int16_t int_value = static_cast<int16_t>(value / factor);
+  this->add_measurement_sint16(object_id, int_value);
+}
+
+void BTHomeConcentrator::clear_local_measurements() {
+  this->local_measurements_.clear();
+  ESP_LOGD(TAG, "Cleared all local measurements");
 }
 
 }  // namespace bt_home_concentrator
