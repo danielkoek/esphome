@@ -9,7 +9,7 @@ from esphome.const import (
 
 CODEOWNERS = ["@danielkoek"]
 DEPENDENCIES = ["sx126x"]
-AUTO_LOAD = ["text_sensor"]
+AUTO_LOAD = ["text_sensor", "binary_sensor", "sensor"]
 
 lora_bthome_receiver_ns = cg.esphome_ns.namespace("lora_bthome_receiver")
 LoRaBTHomeReceiver = lora_bthome_receiver_ns.class_(
