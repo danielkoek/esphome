@@ -94,6 +94,24 @@ enum class WiFiSTAConnectStatus : int {
   ERROR_CONNECT_FAILED,
 };
 
+/// Tracks the current retry strategy/phase for WiFi connection attempts
+enum class WiFiRetryPhase : uint8_t {
+  /// Initial connection attempt (varies based on fast_connect setting)
+  INITIAL_CONNECT,
+#ifdef USE_WIFI_FAST_CONNECT
+  /// Fast connect mode: cycling through configured APs (config-only, no scan)
+  FAST_CONNECT_CYCLING_APS,
+#endif
+  /// Explicitly hidden networks (user marked as hidden, try before scanning)
+  EXPLICIT_HIDDEN,
+  /// Scan-based: connecting to best AP from scan results
+  SCAN_CONNECTING,
+  /// Retry networks not found in scan (might be hidden)
+  RETRY_HIDDEN,
+  /// Restarting WiFi adapter to clear stuck state
+  RESTARTING_ADAPTER,
+};
+
 /// Struct for setting static IPs in WiFiComponent.
 struct ManualIP {
   network::IPAddress static_ip;
@@ -218,10 +236,14 @@ class WiFiComponent : public Component {
   WiFiComponent();
 
   void set_sta(const WiFiAP &ap);
-  WiFiAP get_sta() { return this->selected_ap_; }
+  // Returns a copy of the currently selected AP configuration
+  WiFiAP get_sta() const;
   void init_sta(size_t count);
   void add_sta(const WiFiAP &ap);
-  void clear_sta();
+  void clear_sta() {
+    this->sta_.clear();
+    this->selected_sta_index_ = -1;
+  }
 
 #ifdef USE_WIFI_AP
   /** Setup an Access Point that should be created if no connection to a station can be made.
@@ -233,6 +255,7 @@ class WiFiComponent : public Component {
    */
   void set_ap(const WiFiAP &ap);
   WiFiAP get_ap() { return this->ap_; }
+  void set_ap_timeout(uint32_t ap_timeout) { ap_timeout_ = ap_timeout; }
 #endif  // USE_WIFI_AP
 
   void enable();
@@ -241,13 +264,10 @@ class WiFiComponent : public Component {
   void start_scanning();
   void check_scanning_finished();
   void start_connecting(const WiFiAP &ap, bool two);
-  void set_ap_timeout(uint32_t ap_timeout) { ap_timeout_ = ap_timeout; }
 
   void check_connecting_finished();
 
   void retry_connect();
-
-  bool can_proceed() override;
 
   void set_reboot_timeout(uint32_t reboot_timeout);
 
@@ -337,6 +357,59 @@ class WiFiComponent : public Component {
 #endif  // USE_WIFI_AP
 
   void print_connect_params_();
+  WiFiAP build_params_for_current_phase_();
+
+  /// Determine next retry phase based on current state and failure conditions
+  WiFiRetryPhase determine_next_phase_();
+  /// Transition to a new retry phase with logging
+  /// Returns true if a scan was started (caller should wait), false otherwise
+  bool transition_to_phase_(WiFiRetryPhase new_phase);
+  /// Check if we need valid scan results for the current phase but don't have any
+  /// Returns true if the phase requires scan results but they're missing or don't match
+  bool needs_scan_results_() const;
+  /// Check if we went through EXPLICIT_HIDDEN phase (first network is marked hidden)
+  /// Used in RETRY_HIDDEN to determine whether to skip explicitly hidden networks
+  bool went_through_explicit_hidden_phase_() const;
+  /// Find the index of the first non-hidden network
+  /// Returns where EXPLICIT_HIDDEN phase would have stopped, or -1 if all networks are hidden
+  int8_t find_first_non_hidden_index_() const;
+  /// Check if an SSID was seen in the most recent scan results
+  /// Used to skip hidden mode for SSIDs we know are visible
+  bool ssid_was_seen_in_scan_(const std::string &ssid) const;
+  /// Find next SSID that wasn't in scan results (might be hidden)
+  /// Returns index of next potentially hidden SSID, or -1 if none found
+  /// @param start_index Start searching from index after this (-1 to start from beginning)
+  /// @param include_explicit_hidden If true, include SSIDs marked hidden:true. If false, only find truly hidden SSIDs.
+  int8_t find_next_hidden_sta_(int8_t start_index, bool include_explicit_hidden = true);
+  /// Log failed connection and decrease BSSID priority to avoid repeated attempts
+  void log_and_adjust_priority_for_failed_connect_();
+  /// Advance to next target (AP/SSID) within current phase, or increment retry counter
+  /// Called when staying in the same phase after a failed connection attempt
+  void advance_to_next_target_or_increment_retry_();
+  /// Start initial connection - either scan or connect directly to hidden networks
+  void start_initial_connection_();
+  const WiFiAP *get_selected_sta_() const {
+    if (this->selected_sta_index_ >= 0 && static_cast<size_t>(this->selected_sta_index_) < this->sta_.size()) {
+      return &this->sta_[this->selected_sta_index_];
+    }
+    return nullptr;
+  }
+
+  void reset_selected_ap_to_first_if_invalid_() {
+    if (this->selected_sta_index_ < 0 || static_cast<size_t>(this->selected_sta_index_) >= this->sta_.size()) {
+      this->selected_sta_index_ = this->sta_.empty() ? -1 : 0;
+    }
+  }
+
+  bool all_networks_hidden_() const {
+    if (this->sta_.empty())
+      return false;
+    for (const auto &ap : this->sta_) {
+      if (!ap.get_hidden())
+        return false;
+    }
+    return true;
+  }
 
   void wifi_loop_();
   bool wifi_mode_(optional<bool> sta, optional<bool> ap);
@@ -365,7 +438,7 @@ class WiFiComponent : public Component {
   bool is_esp32_improv_active_();
 
 #ifdef USE_WIFI_FAST_CONNECT
-  bool load_fast_connect_settings_();
+  bool load_fast_connect_settings_(WiFiAP &params);
   void save_fast_connect_settings_();
 #endif
 
@@ -396,8 +469,9 @@ class WiFiComponent : public Component {
   FixedVector<WiFiAP> sta_;
   std::vector<WiFiSTAPriority> sta_priorities_;
   wifi_scan_vector_t<WiFiScanResult> scan_result_;
-  WiFiAP selected_ap_;
+#ifdef USE_WIFI_AP
   WiFiAP ap_;
+#endif
   optional<float> output_power_;
   ESPPreferenceObject pref_;
 #ifdef USE_WIFI_FAST_CONNECT
@@ -408,24 +482,25 @@ class WiFiComponent : public Component {
   uint32_t action_started_;
   uint32_t last_connected_{0};
   uint32_t reboot_timeout_{};
+#ifdef USE_WIFI_AP
   uint32_t ap_timeout_{};
+#endif
 
   // Group all 8-bit values together
   WiFiComponentState state_{WIFI_COMPONENT_STATE_OFF};
   WiFiPowerSaveMode power_save_{WIFI_POWER_SAVE_NONE};
+  WiFiRetryPhase retry_phase_{WiFiRetryPhase::INITIAL_CONNECT};
   uint8_t num_retried_{0};
-#ifdef USE_WIFI_FAST_CONNECT
-  uint8_t ap_index_{0};
-#endif
+  // Index into sta_ array for the currently selected AP configuration (-1 = none selected)
+  // Used to access password, manual_ip, priority, EAP settings, and hidden flag
+  // int8_t limits to 127 APs (enforced in __init__.py via MAX_WIFI_NETWORKS)
+  int8_t selected_sta_index_{-1};
+
 #if USE_NETWORK_IPV6
   uint8_t num_ipv6_addresses_{0};
 #endif /* USE_NETWORK_IPV6 */
 
   // Group all boolean values together
-#ifdef USE_WIFI_FAST_CONNECT
-  bool trying_loaded_ap_{false};
-#endif
-  bool retry_hidden_{false};
   bool has_ap_{false};
   bool handled_connected_state_{false};
   bool error_from_callback_{false};
