@@ -269,8 +269,8 @@ void LoRaBTHomeReceiver::publish_devices_json_() {
     return;
   }
 
-  // Build JSON string manually to avoid dependencies
-  std::string json = "{";
+  // Build JSON array of devices
+  std::string json = "[";
   bool first_device = true;
 
   for (const auto &entry : this->devices_) {
@@ -281,11 +281,14 @@ void LoRaBTHomeReceiver::publish_devices_json_() {
     }
     first_device = false;
 
-    // Device key: MAC address
-    json += "\"" + device.mac_str + "\":{";
+    // Start device object
+    json += "{";
+
+    // Add MAC address as a field
+    json += "\"mac\":\"" + device.mac_str + "\"";
 
     // Add RSSI and SNR
-    json += str_sprintf("\"rssi\":%.1f", device.rssi);
+    json += str_sprintf(",\"rssi\":%.1f", device.rssi);
     json += str_sprintf(",\"snr\":%.1f", device.snr);
     json += str_sprintf(",\"last_seen\":%u", device.last_seen);
     json += str_sprintf(",\"packet_id\":%u", device.packet_id);
@@ -303,7 +306,7 @@ void LoRaBTHomeReceiver::publish_devices_json_() {
     json += "}";
   }
 
-  json += "}";
+  json += "]";
 
   ESP_LOGD(TAG, "Publishing JSON: %s", json.c_str());
   this->devices_sensor_->publish_state(json);
