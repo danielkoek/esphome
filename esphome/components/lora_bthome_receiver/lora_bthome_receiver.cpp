@@ -1,6 +1,6 @@
 #include "lora_bthome_receiver.h"
 #include "esphome/core/log.h"
-#include "esphome/core/application.h"
+#include "esphome/core/helpers.h"
 
 namespace esphome {
 namespace lora_bthome_receiver {
@@ -76,29 +76,27 @@ static const std::map<uint8_t, BTHomeObjectInfo> BTHOME_OBJECT_MAP = {
 
 void LoRaBTHomeReceiver::setup() {
   ESP_LOGCONFIG(TAG, "Setting up LoRa BTHome Receiver...");
-  this->parent_->register_listener(this);
+  this->Parented<sx126x::SX126x>::parent_->register_listener(this);
 }
 
 void LoRaBTHomeReceiver::loop() {
-  // Cleanup expired sensors periodically
+  // Cleanup expired devices periodically
   static uint32_t last_cleanup = 0;
   uint32_t now = millis();
   if (now - last_cleanup > 60000) {  // Every minute
-    this->cleanup_expired_sensors_();
+    this->cleanup_expired_devices_();
     last_cleanup = now;
   }
 }
 
 void LoRaBTHomeReceiver::dump_config() {
   ESP_LOGCONFIG(TAG, "LoRa BTHome Receiver:");
-  ESP_LOGCONFIG(TAG, "  Update Sensors on Receive: %s", YESNO(this->update_sensors_on_receive_));
-  ESP_LOGCONFIG(TAG, "  Create RSSI Sensors: %s", YESNO(this->create_rssi_sensors_));
-  ESP_LOGCONFIG(TAG, "  Create SNR Sensors: %s", YESNO(this->create_snr_sensors_));
-  ESP_LOGCONFIG(TAG, "  Sensor Expire Time: %u ms", this->sensor_expire_time_ms_);
+  ESP_LOGCONFIG(TAG, "  Devices Sensor: %s", this->devices_sensor_ != nullptr ? "configured" : "not configured");
   ESP_LOGCONFIG(TAG, "Statistics:");
   ESP_LOGCONFIG(TAG, "  Packets Received: %u", this->packets_received_);
   ESP_LOGCONFIG(TAG, "  Packets Decoded: %u", this->packets_decoded_);
   ESP_LOGCONFIG(TAG, "  Packets Failed: %u", this->packets_failed_);
+  ESP_LOGCONFIG(TAG, "  Active Devices: %u", this->devices_.size());
 }
 
 void LoRaBTHomeReceiver::on_packet(const std::vector<uint8_t> &packet, float rssi, float snr) {
@@ -109,6 +107,8 @@ void LoRaBTHomeReceiver::on_packet(const std::vector<uint8_t> &packet, float rss
   if (this->decode_packet_(packet, rssi, snr)) {
     this->packets_decoded_++;
     ESP_LOGI(TAG, "Successfully decoded BTHome concentrator packet");
+    // Publish updated JSON data
+    this->publish_devices_json_();
   } else {
     this->packets_failed_++;
     ESP_LOGW(TAG, "Failed to decode packet");
@@ -161,6 +161,8 @@ bool LoRaBTHomeReceiver::decode_packet_(const std::vector<uint8_t> &packet, floa
     device.mac_str = mac_str;
     device.packet_id = packet_id;
     device.last_seen = millis();
+    device.rssi = rssi;
+    device.snr = snr;
     device.measurements.clear();
 
     // Parse measurements
@@ -191,45 +193,20 @@ bool LoRaBTHomeReceiver::decode_packet_(const std::vector<uint8_t> &packet, floa
       if (info != nullptr) {
         measurement.name = info->name;
         measurement.unit = info->unit;
+        measurement.is_binary = info->is_binary;
         measurement.value = this->parse_measurement_value_(object_id, data);
 
         ESP_LOGD(TAG, "  [%u] %s: %.2f %s (0x%02X)", meas_idx + 1, measurement.name.c_str(), measurement.value,
                  measurement.unit.c_str(), object_id);
-
-        // Update or create sensor
-        if (this->update_sensors_on_receive_) {
-          if (info->is_binary) {
-            auto *bin_sensor = this->get_binary_sensor(mac, object_id, measurement.name);
-            if (bin_sensor != nullptr) {
-              bin_sensor->publish_state(measurement.value > 0.5f);
-            }
-          } else {
-            auto *sensor = this->get_sensor(mac, object_id, measurement.name);
-            if (sensor != nullptr) {
-              sensor->publish_state(measurement.value);
-            }
-          }
-        }
       } else {
+        measurement.name = "unknown";
+        measurement.unit = "";
+        measurement.is_binary = false;
+        measurement.value = 0;
         ESP_LOGV(TAG, "  [%u] Unknown object 0x%02X", meas_idx + 1, object_id);
       }
 
       device.measurements.push_back(measurement);
-    }
-
-    // Update RSSI/SNR sensors if enabled
-    if (this->create_rssi_sensors_) {
-      auto *rssi_sensor = this->get_rssi_sensor(mac);
-      if (rssi_sensor != nullptr) {
-        rssi_sensor->publish_state(rssi);
-      }
-    }
-
-    if (this->create_snr_sensors_) {
-      auto *snr_sensor = this->get_snr_sensor(mac);
-      if (snr_sensor != nullptr) {
-        snr_sensor->publish_state(snr);
-      }
     }
   }
 
@@ -279,12 +256,6 @@ const BTHomeObjectInfo *LoRaBTHomeReceiver::get_object_info_(uint8_t object_id) 
   return nullptr;
 }
 
-std::string LoRaBTHomeReceiver::generate_entity_id_(uint64_t mac, const std::string &measurement_name) {
-  char buffer[64];
-  snprintf(buffer, sizeof(buffer), "%012llx_%s", mac, measurement_name.c_str());
-  return std::string(buffer);
-}
-
 std::string LoRaBTHomeReceiver::mac_to_string_(uint64_t mac) {
   char buffer[18];
   snprintf(buffer, sizeof(buffer), "%02X:%02X:%02X:%02X:%02X:%02X", (uint8_t) ((mac >> 40) & 0xFF),
@@ -293,137 +264,64 @@ std::string LoRaBTHomeReceiver::mac_to_string_(uint64_t mac) {
   return std::string(buffer);
 }
 
-sensor::Sensor *LoRaBTHomeReceiver::get_sensor(uint64_t mac, uint8_t object_id, const std::string &name) {
-  std::string entity_id = this->generate_entity_id_(mac, name);
-
-  auto it = this->sensors_.find(entity_id);
-  if (it != this->sensors_.end()) {
-    return it->second;
+void LoRaBTHomeReceiver::publish_devices_json_() {
+  if (this->devices_sensor_ == nullptr) {
+    return;
   }
 
-  // Create new sensor
-  ESP_LOGI(TAG, "Creating sensor: %s", entity_id.c_str());
+  // Build JSON string manually to avoid dependencies
+  std::string json = "{";
+  bool first_device = true;
 
-  auto *sensor = new sensor::Sensor();
-  // Note: set_name expects const char* that persists - we use empty string and rely on object_id
-  sensor->set_object_id(strdup(entity_id.c_str()));
+  for (const auto &entry : this->devices_) {
+    const BTHomeDevice &device = entry.second;
 
-  const BTHomeObjectInfo *info = this->get_object_info_(object_id);
-  if (info != nullptr) {
-    sensor->set_unit_of_measurement(info->unit);
-    sensor->set_device_class(info->device_class);
-    sensor->set_icon(info->icon);
+    if (!first_device) {
+      json += ",";
+    }
+    first_device = false;
+
+    // Device key: MAC address
+    json += "\"" + device.mac_str + "\":{";
+
+    // Add RSSI and SNR
+    json += str_sprintf("\"rssi\":%.1f", device.rssi);
+    json += str_sprintf(",\"snr\":%.1f", device.snr);
+    json += str_sprintf(",\"last_seen\":%u", device.last_seen);
+    json += str_sprintf(",\"packet_id\":%u", device.packet_id);
+
+    // Add measurements
+    for (const auto &meas : device.measurements) {
+      json += ",\"" + meas.name + "\":";
+      if (meas.is_binary) {
+        json += meas.value > 0.5f ? "true" : "false";
+      } else {
+        json += str_sprintf("%.2f", meas.value);
+      }
+    }
+
+    json += "}";
   }
 
-  App.register_sensor(sensor);
-  this->sensors_[entity_id] = sensor;
+  json += "}";
 
-  return sensor;
-}
-binary_sensor::BinarySensor *LoRaBTHomeReceiver::get_binary_sensor(uint64_t mac, uint8_t object_id,
-                                                                   const std::string &name) {
-  std::string entity_id = this->generate_entity_id_(mac, name);
-
-  auto it = this->binary_sensors_.find(entity_id);
-  if (it != this->binary_sensors_.end()) {
-    return it->second;
-  }
-
-  // Create new binary sensor
-  ESP_LOGI(TAG, "Creating binary sensor: %s", entity_id.c_str());
-
-  auto *sensor = new binary_sensor::BinarySensor();
-  // Note: set_name expects const char* that persists - we use empty string and rely on object_id
-  sensor->set_object_id(strdup(entity_id.c_str()));
-
-  const BTHomeObjectInfo *info = this->get_object_info_(object_id);
-  if (info != nullptr) {
-    sensor->set_device_class(info->device_class);
-    sensor->set_icon(info->icon);
-  }
-
-  App.register_binary_sensor(sensor);
-  this->binary_sensors_[entity_id] = sensor;
-
-  return sensor;
-}
-text_sensor::TextSensor *LoRaBTHomeReceiver::get_text_sensor(uint64_t mac, const std::string &name) {
-  std::string entity_id = this->generate_entity_id_(mac, name);
-
-  auto it = this->text_sensors_.find(entity_id);
-  if (it != this->text_sensors_.end()) {
-    return it->second;
-  }
-
-  // Create new text sensor
-  ESP_LOGI(TAG, "Creating text sensor: %s", entity_id.c_str());
-
-  auto *sensor = new text_sensor::TextSensor();
-  // Note: set_name expects const char* that persists - we use empty string and rely on object_id
-  sensor->set_object_id(strdup(entity_id.c_str()));
-
-  App.register_text_sensor(sensor);
-  this->text_sensors_[entity_id] = sensor;
-
-  return sensor;
+  ESP_LOGD(TAG, "Publishing JSON: %s", json.c_str());
+  this->devices_sensor_->publish_state(json);
 }
 
-sensor::Sensor *LoRaBTHomeReceiver::get_rssi_sensor(uint64_t mac) {
-  auto it = this->rssi_sensors_.find(mac);
-  if (it != this->rssi_sensors_.end()) {
-    return it->second;
-  }
-
-  // Create new RSSI sensor
-  std::string entity_id = str_sprintf("%012llx_rssi", mac);
-  ESP_LOGI(TAG, "Creating RSSI sensor: %s", entity_id.c_str());
-
-  auto *sensor = new sensor::Sensor();
-  sensor->set_object_id(strdup(entity_id.c_str()));
-  sensor->set_unit_of_measurement("dBm");
-  sensor->set_device_class("signal_strength");
-  sensor->set_icon("mdi:wifi");
-
-  App.register_sensor(sensor);
-  this->rssi_sensors_[mac] = sensor;
-
-  return sensor;
-}
-sensor::Sensor *LoRaBTHomeReceiver::get_snr_sensor(uint64_t mac) {
-  auto it = this->snr_sensors_.find(mac);
-  if (it != this->snr_sensors_.end()) {
-    return it->second;
-  }
-
-  // Create new SNR sensor
-  ESP_LOGI(TAG, "Creating SNR sensor for MAC %s", this->mac_to_string_(mac).c_str());
-
-  // Create new SNR sensor
-  std::string entity_id = str_sprintf("%012llx_snr", mac);
-  ESP_LOGI(TAG, "Creating SNR sensor: %s", entity_id.c_str());
-
-  auto *sensor = new sensor::Sensor();
-  sensor->set_object_id(strdup(entity_id.c_str()));
-  sensor->set_unit_of_measurement("dB");
-  sensor->set_icon("mdi:signal");
-
-  App.register_sensor(sensor);
-  this->snr_sensors_[mac] = sensor;
-
-  return sensor;
-}
-
-void LoRaBTHomeReceiver::cleanup_expired_sensors_() {
+void LoRaBTHomeReceiver::cleanup_expired_devices_() {
   uint32_t now = millis();
+  const uint32_t expire_time = 600000;  // 10 minutes
 
-  // Remove expired devices
-  auto dev_it = this->devices_.begin();
-  while (dev_it != this->devices_.end()) {
-    if (now - dev_it->second.last_seen > this->sensor_expire_time_ms_) {
-      ESP_LOGD(TAG, "Removing expired device: %s", dev_it->second.mac_str.c_str());
-      dev_it = this->devices_.erase(dev_it);
+  auto it = this->devices_.begin();
+  while (it != this->devices_.end()) {
+    if (now - it->second.last_seen > expire_time) {
+      ESP_LOGD(TAG, "Removing expired device: %s", it->second.mac_str.c_str());
+      it = this->devices_.erase(it);
+      // Republish JSON after device removal
+      this->publish_devices_json_();
     } else {
-      ++dev_it;
+      ++it;
     }
   }
 }
