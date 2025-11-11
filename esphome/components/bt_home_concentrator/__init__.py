@@ -44,11 +44,17 @@ CONFIG_SCHEMA = (
 async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
+
+    # Register with BLE tracker (this sets ESPBTDeviceListener::parent_)
     await esp32_ble_tracker.register_ble_device(var, config)
 
-    # Set parent SX126x
+    # Set parent SX126x - use explicit Parented<SX126x>::set_parent to avoid ambiguity
     parent = await cg.get_variable(config[CONF_SX126X_ID])
-    cg.add(var.set_parent(parent))
+    cg.add(
+        cg.RawExpression(
+            f"{var}->Parented<esphome::sx126x::SX126x>::set_parent({parent})"
+        )
+    )
 
     # Configure parameters
     cg.add(var.set_max_devices(config[CONF_MAX_DEVICES]))
