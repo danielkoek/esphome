@@ -91,7 +91,10 @@ void LoRaBTHomeReceiver::loop() {
 
 void LoRaBTHomeReceiver::dump_config() {
   ESP_LOGCONFIG(TAG, "LoRa BTHome Receiver:");
-  ESP_LOGCONFIG(TAG, "  Devices Sensor: %s", this->devices_sensor_ != nullptr ? "configured" : "not configured");
+  ESP_LOGCONFIG(TAG, "  Devices List Sensor: %s",
+                this->devices_list_sensor_ != nullptr ? "configured" : "not configured");
+  ESP_LOGCONFIG(TAG, "  Registered Sensors: %u", this->registered_sensors_.size());
+  ESP_LOGCONFIG(TAG, "  Registered Binary Sensors: %u", this->registered_binary_sensors_.size());
   ESP_LOGCONFIG(TAG, "Statistics:");
   ESP_LOGCONFIG(TAG, "  Packets Received: %u", this->packets_received_);
   ESP_LOGCONFIG(TAG, "  Packets Decoded: %u", this->packets_decoded_);
@@ -107,8 +110,9 @@ void LoRaBTHomeReceiver::on_packet(const std::vector<uint8_t> &packet, float rss
   if (this->decode_packet_(packet, rssi, snr)) {
     this->packets_decoded_++;
     ESP_LOGI(TAG, "Successfully decoded BTHome concentrator packet");
-    // Publish updated JSON data
-    this->publish_devices_json_();
+    // Publish device list and measurements
+    this->publish_devices_list_();
+    this->publish_measurements_();
   } else {
     this->packets_failed_++;
     ESP_LOGW(TAG, "Failed to decode packet");
@@ -159,6 +163,7 @@ bool LoRaBTHomeReceiver::decode_packet_(const std::vector<uint8_t> &packet, floa
     BTHomeDevice &device = this->devices_[mac];
     device.mac_address = mac;
     device.mac_str = mac_str;
+    device.mac_suffix = this->get_mac_suffix_(mac_str);
     device.packet_id = packet_id;
     device.last_seen = millis();
     device.rssi = rssi;
@@ -264,54 +269,96 @@ std::string LoRaBTHomeReceiver::mac_to_string_(uint64_t mac) {
   return std::string(buffer);
 }
 
-void LoRaBTHomeReceiver::publish_devices_json_() {
-  if (this->devices_sensor_ == nullptr) {
+std::string LoRaBTHomeReceiver::get_mac_suffix_(const std::string &mac_str) {
+  // Extract last 5 characters (XX:XX)
+  if (mac_str.length() >= 5) {
+    return mac_str.substr(mac_str.length() - 5);
+  }
+  return mac_str;
+}
+
+void LoRaBTHomeReceiver::register_device_sensor(const std::string &mac_suffix, const std::string &measurement,
+                                                sensor::Sensor *sens) {
+  std::string key = mac_suffix + ":" + measurement;
+  this->registered_sensors_[key] = sens;
+  ESP_LOGD(TAG, "Registered sensor for %s - %s", mac_suffix.c_str(), measurement.c_str());
+}
+
+void LoRaBTHomeReceiver::register_device_binary_sensor(const std::string &mac_suffix, const std::string &measurement,
+                                                       binary_sensor::BinarySensor *sens) {
+  std::string key = mac_suffix + ":" + measurement;
+  this->registered_binary_sensors_[key] = sens;
+  ESP_LOGD(TAG, "Registered binary sensor for %s - %s", mac_suffix.c_str(), measurement.c_str());
+}
+
+void LoRaBTHomeReceiver::publish_devices_list_() {
+  if (this->devices_list_sensor_ == nullptr) {
     return;
   }
 
-  // Build JSON array of devices
-  std::string json = "[";
-  bool first_device = true;
+  std::string device_list;
+  bool first = true;
 
   for (const auto &entry : this->devices_) {
-    const BTHomeDevice &device = entry.second;
-
-    if (!first_device) {
-      json += ",";
+    if (!first) {
+      device_list += ", ";
     }
-    first_device = false;
-
-    // Start device object
-    json += "{";
-
-    // Add MAC address as a field
-    json += "\"mac\":\"" + device.mac_str + "\"";
-
-    // Add RSSI and SNR
-    json += str_sprintf(",\"rssi\":%.1f", device.rssi);
-    json += str_sprintf(",\"snr\":%.1f", device.snr);
-    json += str_sprintf(",\"last_seen\":%u", device.last_seen);
-    json += str_sprintf(",\"packet_id\":%u", device.packet_id);
-
-    // Add measurements
-    for (const auto &meas : device.measurements) {
-      json += ",\"" + meas.name + "\":";
-      if (meas.is_binary) {
-        json += meas.value > 0.5f ? "true" : "false";
-      } else {
-        json += str_sprintf("%.2f", meas.value);
-      }
-    }
-
-    json += "}";
+    first = false;
+    device_list += entry.second.mac_suffix;
   }
 
-  json += "]";
+  if (device_list.empty()) {
+    device_list = "No devices";
+  }
 
-  ESP_LOGD(TAG, "Publishing JSON: %s", json.c_str());
-  this->devices_sensor_->publish_state(json);
+  this->devices_list_sensor_->publish_state(device_list);
+  ESP_LOGD(TAG, "Published device list: %s", device_list.c_str());
 }
 
+void LoRaBTHomeReceiver::publish_measurements_() {
+  for (const auto &device_entry : this->devices_) {
+    const BTHomeDevice &device = device_entry.second;
+
+    // Publish RSSI
+    std::string rssi_key = device.mac_suffix + ":rssi";
+    auto rssi_it = this->registered_sensors_.find(rssi_key);
+    if (rssi_it != this->registered_sensors_.end()) {
+      rssi_it->second->publish_state(device.rssi);
+    }
+
+    // Publish SNR
+    std::string snr_key = device.mac_suffix + ":snr";
+    auto snr_it = this->registered_sensors_.find(snr_key);
+    if (snr_it != this->registered_sensors_.end()) {
+      snr_it->second->publish_state(device.snr);
+    }
+
+    // Publish all measurements
+    for (const auto &meas : device.measurements) {
+      std::string key = device.mac_suffix + ":" + meas.name;
+
+      if (meas.is_binary) {
+        auto it = this->registered_binary_sensors_.find(key);
+        if (it != this->registered_binary_sensors_.end()) {
+          it->second->publish_state(meas.value > 0.5f);
+          ESP_LOGV(TAG, "Published %s: %s", key.c_str(), meas.value > 0.5f ? "ON" : "OFF");
+        } else {
+          ESP_LOGW(TAG, "Device %s has '%s' measurement but no binary_sensor configured in YAML",
+                   device.mac_suffix.c_str(), meas.name.c_str());
+        }
+      } else {
+        auto it = this->registered_sensors_.find(key);
+        if (it != this->registered_sensors_.end()) {
+          it->second->publish_state(meas.value);
+          ESP_LOGV(TAG, "Published %s: %.2f", key.c_str(), meas.value);
+        } else {
+          ESP_LOGW(TAG, "Device %s has '%s' measurement but no sensor configured in YAML", device.mac_suffix.c_str(),
+                   meas.name.c_str());
+        }
+      }
+    }
+  }
+}
 void LoRaBTHomeReceiver::cleanup_expired_devices_() {
   uint32_t now = millis();
   const uint32_t expire_time = 600000;  // 10 minutes
@@ -321,8 +368,8 @@ void LoRaBTHomeReceiver::cleanup_expired_devices_() {
     if (now - it->second.last_seen > expire_time) {
       ESP_LOGD(TAG, "Removing expired device: %s", it->second.mac_str.c_str());
       it = this->devices_.erase(it);
-      // Republish JSON after device removal
-      this->publish_devices_json_();
+      // Republish device list
+      this->publish_devices_list_();
     } else {
       ++it;
     }
