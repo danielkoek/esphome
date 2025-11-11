@@ -359,7 +359,7 @@ void BTHomeConcentrator::transmit_data_() {
   }
 
   // Check maximum packet size
-  size_t max_size = this->parent_->get_max_packet_size();
+  size_t max_size = this->Parented<sx126x::SX126x>::parent_->get_max_packet_size();
   if (packet.size() > max_size) {
     ESP_LOGW(TAG, "Packet too large (%u > %u), truncating data", packet.size(), max_size);
     // In a production implementation, you might split into multiple packets
@@ -369,7 +369,7 @@ void BTHomeConcentrator::transmit_data_() {
   ESP_LOGI(TAG, "Transmitting LoRa packet with %u bytes", packet.size());
 
   uint32_t start_time = millis();
-  auto result = this->parent_->transmit_packet(packet);
+  auto result = this->Parented<sx126x::SX126x>::parent_->transmit_packet(packet);
   uint32_t end_time = millis();
 
   if (result == sx126x::SX126xError::NONE) {
