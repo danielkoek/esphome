@@ -9,8 +9,7 @@
 #include "esphome/core/helpers.h"
 #include "esphome/components/binary_sensor/binary_sensor.h"
 
-namespace esphome {
-namespace binary_sensor {
+namespace esphome::binary_sensor {
 
 struct MultiClickTriggerEvent {
   bool state;
@@ -97,8 +96,7 @@ class MultiClickTrigger : public Trigger<>, public Component {
 
   void setup() override {
     this->last_state_ = this->parent_->get_state_default(false);
-    auto f = std::bind(&MultiClickTrigger::on_state_, this, std::placeholders::_1);
-    this->parent_->add_on_state_callback(f);
+    this->parent_->add_on_state_callback([this](bool state) { this->on_state_(state); });
   }
 
   float get_setup_priority() const override { return setup_priority::HARDWARE; }
@@ -172,5 +170,4 @@ template<typename... Ts> class BinarySensorInvalidateAction : public Action<Ts..
   BinarySensor *sensor_;
 };
 
-}  // namespace binary_sensor
-}  // namespace esphome
+}  // namespace esphome::binary_sensor
