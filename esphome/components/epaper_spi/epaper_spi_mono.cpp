@@ -94,10 +94,46 @@ void EPaperGDEY029T94::set_window() {
   this->cmd_data(0x4F, {(uint8_t) this->y_low_, (uint8_t) (this->y_low_ / 256)});
 }
 
+bool EPaperGDEY029T94::transfer_data() {
+  auto start_time = millis();
+
+  if (this->current_data_index_ == 0) {
+    this->set_window();
+    this->current_data_index_ = this->y_low_;
+  }
+
+  const size_t row_length = (this->x_high_ - this->x_low_) / 8;
+  const size_t x_byte_offset = this->x_low_ / 8;
+  FixedVector<uint8_t> row_buf{};
+  row_buf.init(row_length);
+
+  while (this->current_data_index_ != this->y_high_) {
+    // SSD1680 loses its active-command context whenever CS is deasserted.
+    // Resetting the Y address cursor (0x4F) before writing each row makes
+    // this correct even when the transfer is split across loop() calls.
+    this->cmd_data(0x4F, {(uint8_t) (this->current_data_index_ & 0xFF), (uint8_t) (this->current_data_index_ >> 8)});
+
+    const size_t data_idx = this->current_data_index_ * this->row_width_ + x_byte_offset;
+    for (size_t i = 0; i < row_length; i++) {
+      row_buf[i] = this->buffer_[data_idx + i];
+    }
+    this->cmd_data(0x24, &row_buf.front(), row_length);  // NOLINT
+
+    ++this->current_data_index_;
+
+    if (millis() - start_time > MAX_TRANSFER_TIME) {
+      return false;
+    }
+  }
+
+  this->current_data_index_ = 0;
+  return true;
+}
+
 void EPaperGDEY029T94::deep_sleep() {
-  // SSD1680 DEEP_SLEEP_MODE (0x10): must supply mode byte 0x01 (retain RAM)
-  // Without the data byte the controller ignores the command and will not
-  // release the BUSY line correctly on the next hardware reset.
+  // SSD1680 DEEP_SLEEP_MODE (0x10): must supply mode byte 0x01 (retain RAM).
+  // Without the data byte the controller treats it as mode 0x00 (normal mode,
+  // no sleep) and the BUSY line does not behave correctly on the next reset.
   this->cmd_data(0x10, {0x01});
 }
 

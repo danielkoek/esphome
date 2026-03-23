@@ -49,6 +49,6 @@ GDEY029T94Model(
     "gdey029t94",
     width=128,
     height=296,
-    data_rate="2MHz",
+    data_rate="10MHz",  # SSD1680 supports up to 20 MHz
     minimum_update_interval="1s",
 )
