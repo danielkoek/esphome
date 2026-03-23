@@ -83,7 +83,7 @@ void EPaperGDEY029T94::set_window() {
   this->x_high_ += 7;
   this->x_high_ &= ~7;
 
-  // SSD1680 expects X coordinates in byte units (2 bytes total)
+  // SSD1680 SET_RAM_X_START_END (0x44): expects X in byte units — 2 bytes only
   const uint16_t x_start = this->x_low_ / 8;
   const uint16_t x_end = (this->x_high_ - 1) / 8;
 
@@ -94,10 +94,11 @@ void EPaperGDEY029T94::set_window() {
   this->cmd_data(0x4F, {(uint8_t) this->y_low_, (uint8_t) (this->y_low_ / 256)});
 }
 
-void EPaperGDEY029T94::refresh_screen(bool partial) {
-  // This panel is stable with full refresh command sequence.
-  (void) partial;
-  EPaperMono::refresh_screen(false);
+void EPaperGDEY029T94::deep_sleep() {
+  // SSD1680 DEEP_SLEEP_MODE (0x10): must supply mode byte 0x01 (retain RAM)
+  // Without the data byte the controller ignores the command and will not
+  // release the BUSY line correctly on the next hardware reset.
+  this->cmd_data(0x10, {0x01});
 }
 
 }  // namespace esphome::epaper_spi
