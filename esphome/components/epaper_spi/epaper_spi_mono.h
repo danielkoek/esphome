@@ -25,4 +25,23 @@ class EPaperMono : public EPaperBase {
   bool send_red_{true};
 };
 
+/**
+ * Good Display GDEY029T94 (SSD1680) monochrome panel.
+ *
+ * This controller expects a 2-byte X window command (0x44/0x4E) and only a
+ * single black/white RAM transfer for standard updates.
+ */
+class EPaperGDEY029T94 final : public EPaperMono {
+ public:
+  EPaperGDEY029T94(const char *name, uint16_t width, uint16_t height, const uint8_t *init_sequence,
+                   size_t init_sequence_length)
+      : EPaperMono(name, width, height, init_sequence, init_sequence_length) {
+    this->send_red_ = false;
+  }
+
+ protected:
+  void set_window() override;
+  void refresh_screen(bool partial) override;
+};
+
 }  // namespace esphome::epaper_spi

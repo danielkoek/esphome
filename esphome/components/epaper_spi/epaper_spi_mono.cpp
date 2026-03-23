@@ -77,4 +77,21 @@ bool HOT EPaperMono::transfer_data() {
   return true;
 }
 
+void EPaperGDEY029T94::set_window() {
+  // round x-coordinates to byte boundaries
+  this->x_low_ &= ~7;
+  this->x_high_ += 7;
+  this->x_high_ &= ~7;
+
+  // SSD1680 expects X coordinates in byte units (2 bytes total)
+  const uint16_t x_start = this->x_low_ / 8;
+  const uint16_t x_end = (this->x_high_ - 1) / 8;
+
+  this->cmd_data(0x44, {(uint8_t) x_start, (uint8_t) x_end});
+  this->cmd_data(0x4E, {(uint8_t) x_start});
+  this->cmd_data(0x45, {(uint8_t) this->y_low_, (uint8_t) (this->y_low_ / 256), (uint8_t) (this->y_high_ - 1),
+                        (uint8_t) ((this->y_high_ - 1) / 256)});
+  this->cmd_data(0x4F, {(uint8_t) this->y_low_, (uint8_t) (this->y_low_ / 256)});
+}
+
 }  // namespace esphome::epaper_spi

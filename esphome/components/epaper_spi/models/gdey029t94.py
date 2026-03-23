@@ -19,7 +19,7 @@ class GDEY029T94Model(EpaperModel):
     """EpaperModel for GDEY029T94 monochrome display using SSD1680 controller."""
 
     def __init__(self, name, **defaults):
-        super().__init__(name, "EPaperMono", **defaults)
+        super().__init__(name, "EPaperGDEY029T94", **defaults)
 
     def get_init_sequence(self, config):
         """Generate initialization sequence for GDEY029T94 display.
@@ -49,6 +49,6 @@ GDEY029T94Model(
     "gdey029t94",
     width=128,
     height=296,
-    data_rate="10MHz",
+    data_rate="2MHz",
     minimum_update_interval="1s",
 )
