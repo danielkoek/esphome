@@ -94,4 +94,10 @@ void EPaperGDEY029T94::set_window() {
   this->cmd_data(0x4F, {(uint8_t) this->y_low_, (uint8_t) (this->y_low_ / 256)});
 }
 
+void EPaperGDEY029T94::refresh_screen(bool partial) {
+  // This panel is stable with full refresh command sequence.
+  (void) partial;
+  EPaperMono::refresh_screen(false);
+}
+
 }  // namespace esphome::epaper_spi
