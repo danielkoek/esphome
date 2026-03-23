@@ -4,8 +4,8 @@ Supported models:
 - gdey029t94: 128x296 pixels (2.9" display)
 
 This display uses the SSD1680 controller with internal temperature sensor
-for waveform generation. Supports full and partial refresh via the
-built-in display update control register.
+for waveform generation. It currently uses the panel's stable full-refresh
+command path.
 
 Datasheet:
 - https://files.seeedstudio.com/wiki/Other_Display/29-epaper/GDEY029T94.pdf
